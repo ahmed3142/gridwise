@@ -101,7 +101,7 @@ behaviour, the cache, infeasibility repair, 40 randomized scenarios, and each va
 | Check | Result |
 |---|---|
 | Public sample pack against the live Railway URL (`scripts/judge.py`) | **10/10 cases pass**, p95 2.2 s: every interpretation field correct, plans valid under the ground truth, cost quality 1.0000 |
-| Same, inside the Docker image | 10/10, p95 1.9 s |
+| Same, with the Docker Hub image pulled by digest | 10/10, `/health` ready in 5 s |
 | 65 paraphrased notes (`scripts/eval_interpretation.py`) | **65/65 correct** with the primary `gpt-5.4-mini` and with the fallback `gpt-4.1` (also `gpt-5.6-luna`, `gpt-4.1-mini` and `gpt-5.6-terra`) |
 | 24 unique 3-note requests, 8 concurrent | p50 1.9–2.1 s, p95 2.1–2.8 s, 0 non-200 |
 | Provider failures (invalid key, missing model, timeouts) | Controlled responses in 1.2–3.0 s. A missing primary switches to the fallback. The key is redacted in logs. |
@@ -118,8 +118,9 @@ python scripts/eval_interpretation.py       # 65 paraphrased notes: per-field ac
 ## 2. Docker fallback image
 
 ```bash
-docker pull <registry>/<user>/gridwise-llm:1.0.0          # exact tag, see SUBMISSION.md for the digest
-docker run --rm -p 8080:8080 -e OPENAI_API_KEY=sk-... <registry>/<user>/gridwise-llm:1.0.0
+docker pull ahmed3142/gridwise-llm:1.0.0
+# the same image pinned by digest: ahmed3142/gridwise-llm@sha256:28919fa8f8ba5f9a16ed9470792e20fa1dfde0d5c5e85431dc29a7310362ffd7
+docker run --rm -p 8080:8080 -e OPENAI_API_KEY=sk-... ahmed3142/gridwise-llm:1.0.0
 curl http://127.0.0.1:8080/health
 ```
 
@@ -129,7 +130,7 @@ curl http://127.0.0.1:8080/health
   answered as controlled `no_op` entries and the response carries the header
   `X-GridWise-Degraded: true`.
 * Build it yourself: `docker build -t gridwise-llm:1.0.0 .`. For registries use
-  `docker buildx build --platform linux/amd64 -t <registry>/<user>/gridwise-llm:1.0.0 --push .`.
+  `docker buildx build --platform linux/amd64 -t ahmed3142/gridwise-llm:1.0.0 --push .`.
 
 ## 3. Deployment
 

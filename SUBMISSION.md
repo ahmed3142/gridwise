@@ -7,8 +7,8 @@ Fill this in at code freeze. Never write secret values here.
 | Public base URL | `https://gridwise-api-production.up.railway.app` (GET /health, POST /optimize-energy). Always use https: Railway answers http:// with a 301. |
 | GitHub repository | `https://github.com/ahmed3142/gridwise`. It is private during the event and made public right after the deadline. |
 | Submitted commit / tag | `v1.0.0` (`git rev-parse v1.0.0`) |
-| Docker image (tag) | `docker.io/<user>/gridwise-llm:1.0.0` |
-| Docker image (digest) | `docker.io/<user>/gridwise-llm@sha256:<digest>` |
+| Docker image (tag) | `docker.io/ahmed3142/gridwise-llm:1.0.0` (linux/amd64). It is private until the deadline and public after. |
+| Docker image (digest) | `docker.io/ahmed3142/gridwise-llm@sha256:28919fa8f8ba5f9a16ed9470792e20fa1dfde0d5c5e85431dc29a7310362ffd7` |
 | Exposed port | `8080` (binds `0.0.0.0:$PORT`) |
 | Required env vars | `OPENAI_API_KEY` is required. Optional: `OPENAI_MODEL`, `OPENAI_FALLBACK_MODEL`, `PORT` (see README section 4). |
 | LLM provider / model | OpenAI, `gpt-5.4-mini` with fallback `gpt-4.1` (both 65/65 on the paraphrase suite) |
@@ -19,7 +19,7 @@ Fill this in at code freeze. Never write secret values here.
 ## Verified run command for the fallback image
 
 ```bash
-docker run --rm -p 8080:8080 -e OPENAI_API_KEY=<your key> docker.io/<user>/gridwise-llm:1.0.0
+docker run --rm -p 8080:8080 -e OPENAI_API_KEY=<your key> docker.io/ahmed3142/gridwise-llm:1.0.0
 curl http://127.0.0.1:8080/health          # {"status":"ok"}
 python scripts/judge.py --url http://127.0.0.1:8080
 ```
