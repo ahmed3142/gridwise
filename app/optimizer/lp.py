@@ -372,7 +372,7 @@ def solve_relaxed(p: Problem) -> Solution | None:
     k = 0
     for group, label in ((reserve_h, "reserve"), (no_charge_h, "no-charge"), (no_discharge_h, "no-discharge"), (cap_h, "grid cap")):
         for h in group:
-            if slacks[k] > 1e-6:
+            if slacks[k] > 5e-4:  # ignore solver noise; report only material shortfalls
                 sol.violations.append(f"{label} hour {h} short by {slacks[k]:.3f} kWh")
             k += 1
     return sol

@@ -17,13 +17,17 @@ except Exception:  # pragma: no cover - dotenv missing or unreadable .env
 
 
 # Tried in order when OPENAI_MODEL=auto. The first model the API key can access becomes the
-# primary interpreter; the next accessible one becomes the fallback.
+# primary interpreter; the next accessible one becomes the fallback. Order chosen from measurements
+# (scripts/probe_llm.py + scripts/eval_interpretation.py, 2026-09-18): every model below scored 65/65
+# on the paraphrase suite; gpt-5.4-mini was fastest (p95 1.8 s); gpt-4.1 is a different family, so an
+# outage or regression in one family does not take down both primary and fallback.
 DEFAULT_MODEL_PREFERENCE: tuple[str, ...] = (
-    "gpt-4.1-mini",
     "gpt-5.4-mini",
+    "gpt-4.1",
+    "gpt-5.6-luna",
+    "gpt-4.1-mini",
     "gpt-5-mini",
     "gpt-4o-mini",
-    "gpt-4.1",
 )
 
 

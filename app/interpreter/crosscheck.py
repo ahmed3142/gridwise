@@ -20,7 +20,7 @@ _UNITS = {
 }
 _TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90}
 _FRACTIONS = {
-    "half": 0.5, "halved": 0.5, "halves": 0.5, "third": 1 / 3, "thirds": 1 / 3, "quarter": 0.25, "quarters": 0.25,
+    "half": 0.5, "halve": 0.5, "halved": 0.5, "halves": 0.5, "halving": 0.5, "third": 1 / 3, "thirds": 1 / 3, "quarter": 0.25, "quarters": 0.25,
     "fifth": 0.2, "fifths": 0.2, "tenth": 0.1, "tenths": 0.1,
 }
 _NUMBER_RE = re.compile(r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?")

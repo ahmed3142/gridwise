@@ -176,3 +176,48 @@ def test_crosscheck_flags_long_wraparound_ampm_slip():
     assert any("wraps past midnight" in i for i in crosscheck(slip, note))
     overnight = S("no_charge_window", [W(22, 2)], te="from 10 PM to 2 AM")
     assert crosscheck(overnight, "Charging is disabled from 10 PM to 2 AM.") == []
+
+
+class _FakeBadRequest(Exception):
+    def __init__(self, message, param=None):
+        super().__init__(message)
+        self.param = param
+
+
+def _client():
+    from app.config import load_settings
+    from app.interpreter.llm import OpenAIInterpreterClient
+    import dataclasses
+    return OpenAIInterpreterClient(dataclasses.replace(load_settings(), openai_api_key="sk-test"))
+
+
+def test_param_adaptation_is_concurrency_safe():
+    """Two concurrent calls rejected for the same parameter must BOTH retry (regression test)."""
+    client = _client()
+    model = "custom-model"
+    sent_a = client._kwargs(model, [], 5)
+    sent_b = client._kwargs(model, [], 5)
+    assert "temperature" in sent_a and "temperature" in sent_b
+    err = _FakeBadRequest("Unsupported value: 'temperature' does not support 0 with this model.", "temperature")
+    assert client._adapt(model, err, sent_a) is True
+    assert client._adapt(model, err, sent_b) is True  # previously returned False -> note became no_op
+    assert "temperature" not in client._kwargs(model, [], 5)
+    err2 = _FakeBadRequest("Unrecognized request argument supplied: reasoning_effort")
+    sent = client._kwargs(model, [], 5)
+    assert client._adapt(model, err2, sent) is True and client._adapt(model, err2, sent) is True
+    assert "reasoning_effort" not in client._kwargs(model, [], 5)
+    # a parameter we did not send cannot be the problem -> no retry loop
+    assert client._adapt(model, err, client._kwargs(model, [], 5)) is False
+
+
+def test_known_model_families_skip_unsupported_params():
+    client = _client()
+    assert "temperature" not in client._kwargs("gpt-5.4-mini", [], 5)
+    assert "reasoning_effort" in client._kwargs("gpt-5.4-mini", [], 5)
+    assert "reasoning_effort" not in client._kwargs("gpt-4.1", [], 5)
+    assert client._kwargs("gpt-4.1", [], 5)["temperature"] == 0
+
+
+def test_secret_redaction():
+    from app.interpreter.llm import _short
+    assert "sk-" not in _short(Exception("Incorrect API key provided: sk-proj-abc123XYZ****wxyz"))

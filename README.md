@@ -81,7 +81,7 @@ behaviour, the cache, infeasibility repair, 40 randomized scenarios, and each va
 
 ```bash
 python scripts/probe_llm.py                 # which models the key can use, latency and accuracy per model
-python scripts/eval_interpretation.py       # 63 paraphrased notes: per-field accuracy (relevance/type/hours/values)
+python scripts/eval_interpretation.py       # 65 paraphrased notes: per-field accuracy (relevance/type/hours/values)
 ```
 
 ---
@@ -128,7 +128,7 @@ Both configurations keep one instance always running. That matters because the j
 | `OPENAI_API_KEY` | *(none)* | **Required for LLM interpretation.** Keep it in `.env` or platform secrets only. |
 | `OPENAI_MODEL` | `auto` | `auto` picks the first model in `OPENAI_MODEL_PREFERENCE` that the key can access. Otherwise it is an explicit model id. |
 | `OPENAI_FALLBACK_MODEL` | *(next accessible)* | Used when the primary fails or times out. |
-| `OPENAI_MODEL_PREFERENCE` | `gpt-4.1-mini,gpt-5.4-mini,gpt-5-mini,gpt-4o-mini,gpt-4.1` | Order used by `auto`. |
+| `OPENAI_MODEL_PREFERENCE` | `gpt-5.4-mini,gpt-4.1,gpt-5.6-luna,gpt-4.1-mini,gpt-5-mini,gpt-4o-mini` | Order used by `auto`. |
 | `OPENAI_REASONING_EFFORT` | `low` | Applies to reasoning models only. It is dropped automatically when a model rejects it. |
 | `OPENAI_BASE_URL` | *(api.openai.com)* | Any OpenAI-compatible endpoint, for example a backup or local model. |
 | `LLM_TIMEOUT_SECONDS` | `9` | Cap for a single LLM attempt. |
@@ -265,7 +265,7 @@ app/
     lp.py               LP model, lexicographic solve, relaxed fallback, culprit finder
     plan.py             rounding, neutrality repair, totals, plan_summary
 scripts/                judge.py, probe_llm.py, eval_interpretation.py, make_request.py
-tests/                  pytest suite + data (public pack, mock answers, 63 paraphrases)
+tests/                  pytest suite + data (public pack, mock answers, 65 paraphrases)
 Dockerfile, fly.toml, railway.json, requirements*.txt, requirements.lock, .env.example
 ```
 

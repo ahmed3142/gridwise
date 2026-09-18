@@ -128,6 +128,13 @@ class OpenAIInterpreterClient:
         state = self._state.get(model)
         if state is None:
             state = _ModelState(effort=self._settings.reasoning_effort)
+            name = model.lower()
+            # Known capabilities, so the first calls do not waste a round trip on a 400:
+            # reasoning families reject temperature; GPT-4.x/3.5 reject reasoning_effort.
+            if name.startswith(("gpt-5", "gpt-6", "o1", "o3", "o4")):
+                state.dropped.add("temperature")
+            if name.startswith(("gpt-4", "gpt-3.5")):
+                state.dropped.add("reasoning_effort")
             self._state[model] = state
         return state
 
@@ -146,8 +153,13 @@ class OpenAIInterpreterClient:
             kw["reasoning_effort"] = st.effort
         return kw
 
-    def _adapt(self, model: str, exc: openai.BadRequestError) -> bool:
-        """Drop/adjust one unsupported parameter. Returns True when a retry makes sense."""
+    def _adapt(self, model: str, exc: openai.BadRequestError, sent: dict) -> bool:
+        """Adjust the rejected parameter. Returns True when a retry with the new settings makes sense.
+
+        Concurrency-safe: several calls to a new model can be rejected at the same moment. The first
+        one updates the shared state; the others see that the state no longer matches what they
+        sent and simply retry with the updated settings (instead of failing).
+        """
         st = self._model_state(model)
         param = (getattr(exc, "param", None) or "").lower()
         msg = str(exc).lower()
@@ -155,24 +167,33 @@ class OpenAIInterpreterClient:
         def mentions(name: str) -> bool:
             return name in param or name in msg
 
-        if mentions("reasoning_effort") or mentions("reasoning.effort"):
-            if st.effort and st.effort not in ("low", "medium") and "reasoning_effort" not in st.dropped:
-                st.effort = "low"
-            elif "reasoning_effort" not in st.dropped:
-                st.dropped.add("reasoning_effort")
-            else:
+        if mentions("reasoning_effort") or mentions("reasoning.effort") or mentions("reasoning effort"):
+            if "reasoning_effort" not in sent:
                 return False
+            if st.effort == sent["reasoning_effort"] and "reasoning_effort" not in st.dropped:
+                if "unsupported value" in msg and st.effort not in ("low", "medium"):
+                    st.effort = "low"  # e.g. 'minimal' not offered by this model
+                else:
+                    st.dropped.add("reasoning_effort")
             return True
-        if mentions("temperature") and "temperature" not in st.dropped:
+        if mentions("temperature"):
+            if "temperature" not in sent:
+                return False
             st.dropped.add("temperature")
             return True
-        if mentions("seed") and "seed" not in st.dropped:
+        if mentions("seed"):
+            if "seed" not in sent:
+                return False
             st.dropped.add("seed")
             return True
-        if mentions("max_completion_tokens") and not st.use_max_tokens:
+        if mentions("max_completion_tokens"):
+            if "max_completion_tokens" not in sent:
+                return False
             st.use_max_tokens = True
             return True
-        if (mentions("response_format") or mentions("json_schema")) and not st.json_mode:
+        if mentions("response_format") or mentions("json_schema"):
+            if sent.get("_json_mode"):
+                return False
             st.json_mode = True
             return True
         return False
@@ -182,6 +203,7 @@ class OpenAIInterpreterClient:
         for _ in range(6):
             st = self._model_state(model)
             kwargs = self._kwargs(model, messages, timeout)
+            sent = dict(kwargs, _json_mode=st.json_mode)
             try:
                 if st.json_mode:
                     result = await self._json_mode_call(kwargs)
@@ -193,7 +215,7 @@ class OpenAIInterpreterClient:
                 log.debug("llm %s ok in %.0f ms", model, (time.perf_counter() - started) * 1000)
                 return result
             except openai.BadRequestError as exc:
-                if self._adapt(model, exc):
+                if self._adapt(model, exc, sent):
                     log.info("model %s rejected a parameter; adapting (%s)", model, _short(exc)[:120])
                     continue
                 raise LLMCallError("bad_request", _short(exc), retryable=False) from None
