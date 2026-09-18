@@ -54,6 +54,21 @@ and the LLM remains the only interpreter of operator notes.
 | Keep-warm background call every 4 minutes | The first burst after idle reached a p95 of about 5.4 s. | Warm p95 2.5–3.7 s. |
 | Multi-arch image (amd64 and arm64) | Judges on Apple Silicon or ARM servers. | `docker buildx imagetools inspect` shows both platforms. |
 
+## 2b. Final verification round (23:20–23:30, frozen build)
+
+| Check (live URL unless noted) | Result |
+|---|---|
+| Independent hold-out: 60 notes written by a separate author who never saw our prompt or tests (`tests/data/independent_holdout.jsonl`) | **60/60** on every field; a transient OpenAI connection error was recovered by the retry |
+| The Problem Statement's own example notes (sections 4.2 and 11.4) | 7/7 |
+| 12 edge scenarios: fractional data, zero solar, solar above demand, flat and zero tariffs, zero demand, unusable, zero-rate and zero-capacity batteries, 100x scale | 12/12 HTTP 200, 0 rule violations |
+| Burst of 30 concurrent requests | 0 errors, p95 0.9 s |
+| 20 valid + 20 malformed requests interleaved | 20/20 valid, 20/20 JSON 400; healthy afterwards |
+| Memory over the last hour | about 149 MB on average, 215 MB peak (limit 8 GB), so no leak |
+| Live logs | 0 secret-shaped strings, 0 errors |
+
+Known observability gap, not fixed because of the freeze: keep-warm calls bypass the `/version` success counter
+and log only on failure. The code path was verified separately with the real OpenAI client.
+
 ## 3. What was deliberately not changed
 
 - **Per-note parallel LLM calls rather than one call for all notes.** They're already parallel, and a single call would lengthen output and couple the notes' failures.

@@ -139,6 +139,7 @@ behaviour, the cache, infeasibility repair, 40 randomized scenarios, and each va
 |---|---|
 | Public sample pack against the live Railway URL (`scripts/judge.py`) | **10/10 cases pass**, p95 2.2 s: every interpretation field correct, plans valid under the ground truth, cost quality 1.0000 |
 | Same, with the Docker Hub image pulled by digest | 10/10, `/health` ready in 5 s |
+| Independent hold-out, 60 notes by an author who never saw the prompt (`tests/data/independent_holdout.jsonl`) | **60/60** |
 | Trap catalogue, 53 notes x 3 runs (`scripts/eval_notes.py`) | **53/53 every run**, identical answers |
 | Hidden-style simulation, 5 seeds, ~427 notes (`scripts/hidden_sim.py`, live URL) | **100% of notes, all plans valid**, cost quality 1.0000 |
 | 65 paraphrased notes (`scripts/eval_interpretation.py`) | **65/65 correct** with the primary `gpt-5.4-mini` and with the fallback `gpt-4.1` (also `gpt-5.6-luna`, `gpt-4.1-mini` and `gpt-5.6-terra`) |
