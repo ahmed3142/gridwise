@@ -34,11 +34,11 @@ and battery plan that obeys every note and every GridWise energy rule.
 </div>
 
 > [!NOTE]
-> **This README is the project's runbook.**
+> **About this README**
 >
-> - **Judges:** go to [Verify like the judge](#-verify-like-the-judge). One command replays the public pack against the organizers' ground truth.
-> - **Operators:** start with the [Quickstart](#-quickstart) and the [Docker fallback](#-docker-fallback).
-> - **Engineers:** read [How it works](#-how-it-works) and [`docs/HARDENING_NOTES.md`](docs/HARDENING_NOTES.md), which records every design decision with its evidence.
+> - **Running the service:** see the [Quickstart](#-quickstart) or the [Docker image](#-docker-fallback).
+> - **Checking the results:** the [public-sample check](#-verify-like-the-judge) runs the ten public cases and compares them with the expected output.
+> - **Understanding the design:** see [How it works](#-how-it-works). [`docs/HARDENING_NOTES.md`](docs/HARDENING_NOTES.md) lists the main decisions and the tests behind them.
 
 <br/>
 
