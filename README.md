@@ -15,6 +15,17 @@ battery schedule that obeys every directive and every GridWise energy rule.
                                                                                  then throughput) every response)
 ```
 
+```mermaid
+flowchart LR
+    A[Energy data + operator notes] --> B[LLM interpreter<br/>OpenAI Structured Outputs]
+    B --> C[Guardrail validator<br/>normalize + section 08 checks + cross-check]
+    C --> D[Math optimizer<br/>exact LP, HiGHS]
+    D --> E[Final validator<br/>judge-style replay]
+    E --> F[API response]
+    C -. re-ask once .-> B
+    D -. infeasible: re-ask culprit note .-> B
+```
+
 | Endpoint | Purpose |
 |---|---|
 | `GET /health` | Readiness. Returns `{"status":"ok"}` without waiting for the LLM provider. |
@@ -85,6 +96,32 @@ to test it from outside.
 > On Windows, prefer `127.0.0.1` over `localhost`. Windows tries IPv6 first for `localhost`, which
 > adds about 2 s to every client request.
 
+### Sample request and response (SAMPLE-06, abridged)
+
+```json
+{"scenario_id": "SAMPLE-06",
+ "operator_notes": ["Cloud cover during panel inspection will leave about half of the forecast solar output from 10 AM until noon.",
+                    "The charging circuit will be unavailable from 2 PM until 4 PM.",
+                    "The library is extending book-return hours next week."],
+ "hours": [{"hour": 0, "demand_kwh": 85, "solar_kwh": 0, "tariff_bdt_per_kwh": 5}, "... 23 more ..."],
+ "battery": {"capacity_kwh": 220, "initial_energy_kwh": 100, "minimum_energy_kwh": 35,
+             "max_charge_kwh_per_hour": 50, "max_discharge_kwh_per_hour": 50}}
+```
+
+```json
+{"scenario_id": "SAMPLE-06",
+ "directive_interpretation": [
+   {"note_index": 0, "applies": true, "directive_type": "solar_reduction",
+    "structured_adjustment": {"hours": [10, 11], "factor": 0.5}, "explanation": "Cloud cover leaves about half of forecast solar from 10:00 to 12:00."},
+   {"note_index": 1, "applies": true, "directive_type": "no_charge_window",
+    "structured_adjustment": {"hours": [14, 15]}, "explanation": "The battery cannot be charged from 14:00 to 16:00."},
+   {"note_index": 2, "applies": false, "directive_type": "no_op",
+    "structured_adjustment": null, "explanation": "Library hours change next week, not on today\u2019s schedule."}],
+ "hourly_plan": [{"hour": 0, "grid_kwh": 105, "solar_used_kwh": 0, "battery_action": "charge", "battery_kwh": 20, "battery_energy_after_kwh": 120}, "... 23 more ..."],
+ "total_grid_kwh": 2395, "total_cost_bdt": 34090, "peak_grid_kwh": 175,
+ "plan_summary": "Applied solar limited to 0.5x forecast (hours 10-11); no charging (hours 14-15). 1 note(s) had no effect on to ..."}
+```
+
 ### Offline test suite (no API key needed)
 
 ```bash
@@ -102,6 +139,8 @@ behaviour, the cache, infeasibility repair, 40 randomized scenarios, and each va
 |---|---|
 | Public sample pack against the live Railway URL (`scripts/judge.py`) | **10/10 cases pass**, p95 2.2 s: every interpretation field correct, plans valid under the ground truth, cost quality 1.0000 |
 | Same, with the Docker Hub image pulled by digest | 10/10, `/health` ready in 5 s |
+| Trap catalogue, 53 notes x 3 runs (`scripts/eval_notes.py`) | **53/53 every run**, identical answers |
+| Hidden-style simulation, 5 seeds, ~427 notes (`scripts/hidden_sim.py`, live URL) | **100% of notes, all plans valid**, cost quality 1.0000 |
 | 65 paraphrased notes (`scripts/eval_interpretation.py`) | **65/65 correct** with the primary `gpt-5.4-mini` and with the fallback `gpt-4.1` (also `gpt-5.6-luna`, `gpt-4.1-mini` and `gpt-5.6-terra`) |
 | 24 unique 3-note requests, 8 concurrent | p50 1.9–2.1 s, p95 2.1–2.8 s, 0 non-200 |
 | Provider failures (invalid key, missing model, timeouts) | Controlled responses in 1.2–3.0 s. A missing primary switches to the fallback. The key is redacted in logs. |
@@ -109,6 +148,8 @@ behaviour, the cache, infeasibility repair, 40 randomized scenarios, and each va
 ### Live LLM checks (needs `OPENAI_API_KEY`)
 
 ```bash
+python scripts/eval_notes.py --repeat 3     # 53-note trap catalogue (no_op discipline, injection, Bangla, typos): 53/53 x3
+python scripts/hidden_sim.py --url <base-url> --cases 40 --seed 9002   # random hidden-style cases scored like the judge
 python scripts/probe_llm.py                 # which models the key can use, latency and accuracy per model
 python scripts/eval_interpretation.py       # 65 paraphrased notes: per-field accuracy (relevance/type/hours/values)
 ```
@@ -119,12 +160,12 @@ python scripts/eval_interpretation.py       # 65 paraphrased notes: per-field ac
 
 ```bash
 docker pull ahmed3142/gridwise-llm:1.0.0
-# the same image pinned by digest: ahmed3142/gridwise-llm@sha256:ec5bc94754adc496e302ce32688d756161c208ca50c964ef897bbc093d9d62bf
+# the same image pinned by digest: ahmed3142/gridwise-llm@sha256:d66943e8398841a0915451d22766268db8b2eadd37a8f1afc07c6c046b2adcd4
 docker run --rm -p 8080:8080 -e OPENAI_API_KEY=sk-... ahmed3142/gridwise-llm:1.0.0
 curl http://127.0.0.1:8080/health
 ```
 
-* The image binds `0.0.0.0:$PORT` (default `8080`), runs as a non-root user, has a `HEALTHCHECK`,
+* Multi-arch (linux/amd64 and linux/arm64). The image binds `0.0.0.0:$PORT` (default `8080`), runs as a non-root user, has a `HEALTHCHECK`,
   and contains **no secrets**. `.env` is excluded by `.dockerignore`.
 * Without `OPENAI_API_KEY` the container still starts and `/health` returns `ok`. Notes are then
   answered as controlled `no_op` entries and the response carries the header
