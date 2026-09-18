@@ -103,7 +103,7 @@ def load_settings() -> Settings:
         reasoning_effort=effort,
         llm_timeout_s=_env_float("LLM_TIMEOUT_SECONDS", 9.0, 1.0, 25.0),
         request_deadline_s=_env_float("REQUEST_DEADLINE_SECONDS", 24.0, 5.0, 28.0),
-        llm_max_concurrency=_env_int("LLM_MAX_CONCURRENCY", 12, 1, 64),
+        llm_max_concurrency=_env_int("LLM_MAX_CONCURRENCY", 48, 1, 256),
         max_output_tokens=_env_int("LLM_MAX_OUTPUT_TOKENS", 2500, 256, 16000),
         cache_size=_env_int("INTERPRETATION_CACHE_SIZE", 2048, 0, 100000),
         max_body_bytes=_env_int("MAX_BODY_BYTES", 1_000_000, 10_000, 20_000_000),

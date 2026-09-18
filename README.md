@@ -133,7 +133,7 @@ Both configurations keep one instance always running. That matters because the j
 | `OPENAI_BASE_URL` | *(api.openai.com)* | Any OpenAI-compatible endpoint, for example a backup or local model. |
 | `LLM_TIMEOUT_SECONDS` | `9` | Cap for a single LLM attempt. |
 | `REQUEST_DEADLINE_SECONDS` | `24` | End-to-end budget per request. The judge limit is 30 s. |
-| `LLM_MAX_CONCURRENCY` | `12` | Maximum simultaneous LLM calls, which protects rate limits. |
+| `LLM_MAX_CONCURRENCY` | `48` | Maximum simultaneous LLM calls, which protects rate limits. |
 | `INTERPRETATION_CACHE_SIZE` | `2048` | Number of cached LLM answers. Repeated notes cost no LLM call. |
 | `PORT` / `HOST` | `8080` / `0.0.0.0` | Bind address. |
 | `LOG_LEVEL` | `INFO` | Log verbosity. |

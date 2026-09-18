@@ -151,6 +151,9 @@ class OpenAIInterpreterClient:
             kw["seed"] = 20260918
         if st.effort and "reasoning_effort" not in st.dropped:
             kw["reasoning_effort"] = st.effort
+        if "prompt_cache_key" not in st.dropped:
+            # Same static system prompt on every call: route to the provider's prompt cache.
+            kw["prompt_cache_key"] = "gridwise-interpreter"
         return kw
 
     def _adapt(self, model: str, exc: openai.BadRequestError, sent: dict) -> bool:
@@ -185,6 +188,11 @@ class OpenAIInterpreterClient:
             if "seed" not in sent:
                 return False
             st.dropped.add("seed")
+            return True
+        if mentions("prompt_cache_key"):
+            if "prompt_cache_key" not in sent:
+                return False
+            st.dropped.add("prompt_cache_key")
             return True
         if mentions("max_completion_tokens"):
             if "max_completion_tokens" not in sent:
