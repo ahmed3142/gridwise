@@ -1,0 +1,34 @@
+# Submission manifest
+
+Fill this in at code freeze. Never write secret values here.
+
+| Item | Value |
+|---|---|
+| Public base URL | `https://<app>.fly.dev` (GET /health, POST /optimize-energy) |
+| GitHub repository | `https://github.com/<user>/gridwise`. It is private during the event and made public right after the deadline. |
+| Submitted commit / tag | `v1.0.0` (`git rev-parse v1.0.0`) |
+| Docker image (tag) | `docker.io/<user>/gridwise-llm:1.0.0` |
+| Docker image (digest) | `docker.io/<user>/gridwise-llm@sha256:<digest>` |
+| Exposed port | `8080` (binds `0.0.0.0:$PORT`) |
+| Required env vars | `OPENAI_API_KEY` is required. Optional: `OPENAI_MODEL`, `OPENAI_FALLBACK_MODEL`, `PORT` (see README section 4). |
+| LLM provider / model | OpenAI, `<model id pinned after scripts/probe_llm.py>` with fallback `<model id>` |
+| Optimizer | SciPy `linprog` with the HiGHS solver, as an exact lexicographic LP |
+| 3-minute video | `<link>`, confirmed viewable without login and no longer than 3:00 |
+
+## Verified run command for the fallback image
+
+```bash
+docker run --rm -p 8080:8080 -e OPENAI_API_KEY=<your key> docker.io/<user>/gridwise-llm:1.0.0
+curl http://127.0.0.1:8080/health          # {"status":"ok"}
+python scripts/judge.py --url http://127.0.0.1:8080
+```
+
+## Pre-submit checklist
+
+- [ ] `python -m pytest -q` passes.
+- [ ] `scripts/judge.py --url <public URL> --repeat 2 --concurrency 4` reports 10/10 passed, 0 non-200 responses, p95 under 5 s, and no `DEGRADED` flag.
+- [ ] `GET <public URL>/version` shows the pinned `primary_model` and `llm_status.llm_calls_failed` equal to 0.
+- [ ] A logged-out `docker pull` of the tag works. `docker run` without a key still returns `/health` 200.
+- [ ] No secret appears in the git history: `git log -p | grep -E "sk-[A-Za-z0-9]{10,}"` prints nothing.
+- [ ] The repo is private now, with a reminder set to flip it to public after 23:00.
+- [ ] The video link opens in an incognito window.
