@@ -77,6 +77,16 @@ interpretation, a valid plan under the ground truth, and the reference optimal c
 cover every 400/422 path, extra-field tolerance, provider failures of every kind, the re-ask
 behaviour, the cache, infeasibility repair, 40 randomized scenarios, and each validator rule.
 
+### Measured results (2026-09-18, real OpenAI key)
+
+| Check | Result |
+|---|---|
+| Public sample pack through the API (`scripts/judge.py`) | **10/10 cases pass**: every interpretation field correct, plans valid under the ground truth, cost quality 1.0000 |
+| Same, inside the Docker image | 10/10, p95 1.9 s |
+| 65 paraphrased notes (`scripts/eval_interpretation.py`) | **65/65 correct** with the primary `gpt-5.4-mini` and with the fallback `gpt-4.1` (also `gpt-5.6-luna`, `gpt-4.1-mini` and `gpt-5.6-terra`) |
+| 24 unique 3-note requests, 8 concurrent | p50 1.9–2.1 s, p95 2.1–2.8 s, 0 non-200 |
+| Provider failures (invalid key, missing model, timeouts) | Controlled responses in 1.2–3.0 s. A missing primary switches to the fallback. The key is redacted in logs. |
+
 ### Live LLM checks (needs `OPENAI_API_KEY`)
 
 ```bash
@@ -126,7 +136,7 @@ Both configurations keep one instance always running. That matters because the j
 | Variable | Default | Meaning |
 |---|---|---|
 | `OPENAI_API_KEY` | *(none)* | **Required for LLM interpretation.** Keep it in `.env` or platform secrets only. |
-| `OPENAI_MODEL` | `auto` | `auto` picks the first model in `OPENAI_MODEL_PREFERENCE` that the key can access. Otherwise it is an explicit model id. |
+| `OPENAI_MODEL` | `auto` | `auto` picks the first model in `OPENAI_MODEL_PREFERENCE` that the key can access (measured best: `gpt-5.4-mini`). Otherwise it is an explicit model id. |
 | `OPENAI_FALLBACK_MODEL` | *(next accessible)* | Used when the primary fails or times out. |
 | `OPENAI_MODEL_PREFERENCE` | `gpt-5.4-mini,gpt-4.1,gpt-5.6-luna,gpt-4.1-mini,gpt-5-mini,gpt-4o-mini` | Order used by `auto`. |
 | `OPENAI_REASONING_EFFORT` | `low` | Applies to reasoning models only. It is dropped automatically when a model rejects it. |
