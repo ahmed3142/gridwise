@@ -47,9 +47,14 @@ async def lifespan(app: FastAPI):
     else:
         # Resolve models + one warm-up call in the background; /health never waits for the provider.
         app.state.warmup = asyncio.create_task(app.state.service.warm_up())
+        app.state.keep_warm = asyncio.create_task(app.state.service.keep_warm())
     log.info("GridWise %s ready (prompt %s)", __version__, PROMPT_VERSION)
     yield
     if client is not None:
+        for name in ("keep_warm", "warmup"):
+            task = getattr(app.state, name, None)
+            if task is not None and not task.done():
+                task.cancel()
         await client.aclose()
 
 

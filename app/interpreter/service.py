@@ -125,6 +125,25 @@ class InterpretationService:
             )
         return results
 
+    async def keep_warm(self, interval_s: float = 240.0) -> None:
+        """Background loop: one tiny interpretation every few minutes keeps the provider's prompt cache
+        and our HTTPS connections warm, so the first judged request after a long idle period is as
+        fast as the rest. Failures are counted but never affect request handling."""
+        if not self.configured:
+            return
+        note = "Charging is not allowed from 1 AM to 2 AM."
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_message([note], 0)}]
+        while True:
+            await asyncio.sleep(interval_s)
+            try:
+                chain = await self.client.model_chain()
+                if chain:
+                    await asyncio.wait_for(self.client.interpret(chain[0], messages, 20), timeout=25)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - keep-warm is best effort
+                log.info("keep-warm call skipped (%s)", type(exc).__name__)
+
     async def warm_up(self) -> None:
         """Best-effort background warm-up: resolve models and make one real structured call, so the
         provider's first-use schema processing does not land on a judged request. Never raises."""

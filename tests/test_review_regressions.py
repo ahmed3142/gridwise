@@ -192,3 +192,30 @@ def test_lenient_repairs_do_not_invent_constraints():
     assert window_hours(TimeWindow(start_hour=18, start_minute=0, end_hour=18, end_minute=0))[0] == {18}
     d, _ = normalize(_sem("solar_reduction", [W(13, 15)], 20, "fraction_remaining"), bat, 0, "20%", strict=False)
     assert d.factor == pytest.approx(0.2)
+
+
+def test_keep_warm_calls_periodically_and_survives_errors():
+    calls = []
+
+    class Flaky(FakeLLMClient):
+        async def interpret(self, model, messages, timeout):
+            calls.append(model)
+            if len(calls) == 1:
+                raise RuntimeError("provider hiccup")
+            return await super().interpret(model, messages, timeout)
+
+    fake = Flaky(answers={"Charging is not allowed from 1 AM to 2 AM.": FakeLLMClient().answers[
+        "The battery charger will be isolated from 2 AM until 5 AM for electrical maintenance."]})
+    svc = InterpretationService(fake, settings)
+
+    async def run():
+        task = asyncio.create_task(svc.keep_warm(interval_s=0.05))
+        await asyncio.sleep(0.4)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(run())
+    assert len(calls) >= 3  # kept going after the first failure
