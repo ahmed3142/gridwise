@@ -218,5 +218,9 @@ def evidence_issues(sem: SemanticInterpretation, note: str) -> list[str]:
     return issues
 
 
+_BANGLA_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
+
+
 def crosscheck(sem: SemanticInterpretation, note: str) -> list[str]:
-    return evidence_issues(sem, note) + quantity_issues(sem, note) + time_issues(sem, note)
+    literal = note.translate(_BANGLA_DIGITS)  # Bangla numerals are checked like ASCII digits
+    return evidence_issues(sem, note) + quantity_issues(sem, literal) + time_issues(sem, literal)

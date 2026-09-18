@@ -218,6 +218,8 @@ async def optimize_energy(request: Request):
     except ValidationError as exc:
         return _error(400, "invalid_request", "Request does not match the required schema.", request,
                       _format_validation_errors(exc.errors()))
+    log.info("scenario %s: %d note(s) [%s]", req.scenario_id[:64], len(req.operator_notes),
+             getattr(request.state, "request_id", "-"))
     problems = semantic_problems(req)
     if problems:
         return _error(422, "semantically_invalid", "Request is well-formed but physically inconsistent.", request, problems)

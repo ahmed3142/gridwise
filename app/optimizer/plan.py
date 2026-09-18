@@ -21,7 +21,7 @@ from ..directives import Directive, clean_number, format_hours
 from .lp import H, Problem, Solution
 
 DECIMALS = 6
-_EPS = 1e-7
+_EPS = 1e-6  # |net battery flow| below this is idle (battery_kwh 0, energy unchanged)
 
 
 def build_hourly_plan(p: Problem, sol: Solution) -> list[dict]:

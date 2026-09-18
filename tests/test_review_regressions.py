@@ -219,3 +219,25 @@ def test_keep_warm_calls_periodically_and_survives_errors():
 
     asyncio.run(run())
     assert len(calls) >= 3  # kept going after the first failure
+
+
+def test_bangla_digits_are_cross_checked():
+    note = "দুপুর ২টা থেকে বিকেল ৪টা পর্যন্ত ব্যাটারি চার্জ করা যাবে না।"
+    assert crosscheck(_sem("no_charge_window", [W(14, 16)]), note) == []
+    assert crosscheck(_sem("no_charge_window", [W(14, 20)]), note)  # the fallback model's 4 PM -> 8 PM slip
+
+
+def test_self_check_failure_falls_back_to_safe_baseline(api, sample_input, monkeypatch):
+    import app.pipeline as pipeline
+
+    def broken_plan(p, sol):
+        plan = pipeline.build_hourly_plan.__wrapped__(p, sol) if hasattr(pipeline.build_hourly_plan, "__wrapped__") else None
+        return [dict(e, grid_kwh=e["grid_kwh"] + 50) for e in (plan or original(p, sol))]
+
+    original = pipeline.build_hourly_plan
+    monkeypatch.setattr(pipeline, "build_hourly_plan", broken_plan)
+    r = api.post("/optimize-energy", json=sample_input)
+    body = r.json()
+    assert r.status_code == 200
+    assert body["plan_summary"].startswith("Safe baseline plan")
+    assert all(e["battery_action"] == "idle" for e in body["hourly_plan"])

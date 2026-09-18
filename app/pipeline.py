@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from starlette.concurrency import run_in_threadpool
 
 from .config import Settings
-from .directives import Directive, interpretation_set_problems
+from .directives import Directive, clean_number, interpretation_set_problems
 from .interpreter.service import InterpretationService, NoteResult
 from .optimizer.lp import build_problem, infeasibility_culprits, solve, solve_relaxed, statically_infeasible
 from .optimizer.plan import build_hourly_plan, plan_summary, plan_totals
@@ -37,6 +37,31 @@ class PipelineResult:
     self_check_failed: bool = False
     timings_ms: dict[str, float] = field(default_factory=dict)
     notes: list[NoteResult] = field(default_factory=list)
+
+
+def _baseline_body(req: OptimizeRequest, problem, directives: list[Directive]) -> dict:
+    """Safe last resort: battery idle all day, usable solar first, grid for the remainder."""
+    plan = []
+    for h in range(24):
+        demand = float(problem.demand[h])
+        solar_used = min(float(problem.solar[h]), demand)
+        plan.append({
+            "hour": h,
+            "grid_kwh": clean_number(max(demand - solar_used, 0.0)),
+            "solar_used_kwh": clean_number(solar_used),
+            "battery_action": "idle",
+            "battery_kwh": 0,
+            "battery_energy_after_kwh": clean_number(float(problem.initial), 9),
+        })
+    totals = plan_totals(plan, problem.tariff)
+    return {
+        "scenario_id": req.scenario_id,
+        "directive_interpretation": [d.to_interpretation() for d in directives],
+        "hourly_plan": plan,
+        **totals,
+        "plan_summary": "Safe baseline plan: battery idle, usable solar first, grid for the remainder "
+        f"(total {totals['total_cost_bdt']} BDT).",
+    }
 
 
 async def run_pipeline(req: OptimizeRequest, service: InterpretationService, settings: Settings) -> PipelineResult:
@@ -108,9 +133,14 @@ async def run_pipeline(req: OptimizeRequest, service: InterpretationService, set
 
     t2 = time.perf_counter()
     violations = response_violations(req, body, tol=1e-3)
-    timings["validate"] = (time.perf_counter() - t2) * 1000
     if violations and not solution.relaxed:
         log.error("self-check found %d violation(s): %s", len(violations), violations[:5])
+        baseline = _baseline_body(req, problem, directives)
+        baseline_violations = response_violations(req, baseline, tol=1e-3)
+        if len(baseline_violations) < len(violations):
+            log.error("serving the safe baseline plan instead (%d violation(s))", len(baseline_violations))
+            body, violations = baseline, baseline_violations
+    timings["validate"] = (time.perf_counter() - t2) * 1000
     return PipelineResult(
         body=body,
         degraded=any(r.degraded for r in results) or solution.relaxed,

@@ -96,12 +96,15 @@ def normalize(
         hs, errs = window_hours(w)
         hours |= hs
         problems += errs
+    assumptions: list[str] = []
     if not sem.time_windows:
         problems.append("an applicable directive needs at least one time window (use 00:00-24:00 for all day)")
         if not strict:
             hours = set(range(24))
+            assumptions.append("no usable time window, applied to the whole day")
     elif not hours and not strict:
         hours = set(range(24))  # unusable windows: whole day is the only safe reading of a stated rule
+        assumptions.append("no usable time window, applied to the whole day")
 
     factor = reserve = cap = None
     value, unit = sem.quantity_value, sem.quantity_unit
@@ -138,14 +141,19 @@ def normalize(
         if dtype == "solar_reduction":
             if factor is None:
                 factor = 0.0  # unknown remaining share: assume none (the plan stays valid for any true factor)
+                assumptions.append("remaining solar share not stated, assumed 0")
             factor = min(max(factor, 0.0), 1.0)
         elif dtype == "minimum_battery_reserve":
             if reserve is None:
                 return no_op(note_index, "Reserve amount could not be determined; treated as no_op.", "fallback"), problems
+            if reserve > battery.capacity_kwh:
+                assumptions.append(f"reserve {reserve:g} kWh exceeds capacity, limited to {battery.capacity_kwh:g} kWh")
             reserve = min(max(reserve, 0.0), battery.capacity_kwh)
         elif dtype == "max_grid_window" and cap is None:
             return no_op(note_index, "Grid limit could not be determined; treated as no_op.", "fallback"), problems
 
+    if assumptions:  # conservative repairs are stated, never silent
+        explanation = (explanation + " " if explanation else "") + "(Assumed: " + "; ".join(assumptions) + ".)"
     directive = Directive(
         note_index=note_index,
         directive_type=dtype,
@@ -153,7 +161,7 @@ def normalize(
         factor=factor,
         minimum_energy_kwh=reserve,
         max_grid_kwh=cap,
-        explanation=explanation,
+        explanation=explanation[:400],
     )
     guard = guardrail_problems(directive, battery)
     problems += [g for g in guard if g not in problems]
