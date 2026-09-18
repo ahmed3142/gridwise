@@ -100,7 +100,7 @@ behaviour, the cache, infeasibility repair, 40 randomized scenarios, and each va
 
 | Check | Result |
 |---|---|
-| Public sample pack through the API (`scripts/judge.py`) | **10/10 cases pass**: every interpretation field correct, plans valid under the ground truth, cost quality 1.0000 |
+| Public sample pack against the live Railway URL (`scripts/judge.py`) | **10/10 cases pass**, p95 2.2 s: every interpretation field correct, plans valid under the ground truth, cost quality 1.0000 |
 | Same, inside the Docker image | 10/10, p95 1.9 s |
 | 65 paraphrased notes (`scripts/eval_interpretation.py`) | **65/65 correct** with the primary `gpt-5.4-mini` and with the fallback `gpt-4.1` (also `gpt-5.6-luna`, `gpt-4.1-mini` and `gpt-5.6-terra`) |
 | 24 unique 3-note requests, 8 concurrent | p50 1.9–2.1 s, p95 2.1–2.8 s, 0 non-200 |
@@ -142,8 +142,20 @@ fly deploy
 python scripts/judge.py --url https://<app>.fly.dev
 ```
 
-**Railway** (`railway.json` included): create a service from the repo, set `OPENAI_API_KEY` in
-Variables, and deploy. Railway injects `PORT`, and the health check path is `/health`.
+**Railway** (`railway.json` included, this is where the live service runs:
+`https://gridwise-api-production.up.railway.app`). Deploy with the Railway CLI:
+
+```bash
+railway login
+railway init --name gridwise
+railway add --service gridwise-api --variables "OPENAI_MODEL=gpt-5.4-mini" --variables "OPENAI_FALLBACK_MODEL=gpt-4.1"
+railway variable set OPENAI_API_KEY --stdin --service gridwise-api   # paste the key, never commit it
+railway up --service gridwise-api --detach
+railway domain --service gridwise-api
+```
+
+Railway injects `PORT`, and the health check path is `/health`. Railway redirects `http://` to
+`https://` with a 301, so always use the https URL.
 
 Both configurations keep one instance always running. That matters because the judge needs
 `/health` to answer within 60 s and the rubric scores p95 latency, so cold starts must be avoided.
