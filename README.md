@@ -119,7 +119,7 @@ python scripts/eval_interpretation.py       # 65 paraphrased notes: per-field ac
 
 ```bash
 docker pull ahmed3142/gridwise-llm:1.0.0
-# the same image pinned by digest: ahmed3142/gridwise-llm@sha256:28919fa8f8ba5f9a16ed9470792e20fa1dfde0d5c5e85431dc29a7310362ffd7
+# the same image pinned by digest: ahmed3142/gridwise-llm@sha256:ec5bc94754adc496e302ce32688d756161c208ca50c964ef897bbc093d9d62bf
 docker run --rm -p 8080:8080 -e OPENAI_API_KEY=sk-... ahmed3142/gridwise-llm:1.0.0
 curl http://127.0.0.1:8080/health
 ```
