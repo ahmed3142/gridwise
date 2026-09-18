@@ -438,21 +438,6 @@ docs/                   HARDENING_NOTES.md (decisions + evidence) · VIDEO_OUTLI
 Dockerfile · railway.json · fly.toml · requirements.txt · requirements.lock · .env.example
 ```
 
-## ⚠️ Known limitations
-
-- **Interpretation depends on the LLM.** Measured accuracy is 100% on every labelled set, but hidden wordings can still surprise it.
-- **One directive per note,** as the spec requires. A note that states two constraints yields its main one.
-- **Half-hour windows are widened to whole hours:** 13:30–15:00 becomes [13, 14], which is the conservative choice.
-- **Provider outages degrade notes.** If the provider is unreachable on every attempt, affected notes become `no_op`. The service stays up and flags the response.
-- **Single instance.** The in-memory cache is per instance and is lost on restart.
-
-## 🙏 Credits
-
-- **Team:** architecture, prompt design, optimizer, guardrails and evaluation.
-- **AI coding assistant:** Claude Code (Anthropic) assisted with implementation, tests and documentation, as the official rulebook permits.
-- **LLM provider:** the OpenAI API, for operator-note interpretation at runtime.
-- **Libraries:** FastAPI, Starlette, Uvicorn, Pydantic, OpenAI Python SDK, NumPy, SciPy (HiGHS), python-dotenv, pytest.
-- **Data:** only the synthetic challenge data supplied by the organizers.
 
 <div align="center">
 <sub>Built for <b>BUP CSE Fest 2026</b> · Bangladesh University of Professionals · Hackathon (online preliminary)</sub>
