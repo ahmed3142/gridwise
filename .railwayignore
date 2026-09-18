@@ -1,0 +1,14 @@
+# Never upload secrets or local state to Railway (in addition to .gitignore)
+.env
+.env.*
+!.env.example
+**/.env
+*.pem
+*.key
+.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+reports/
