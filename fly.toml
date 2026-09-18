@@ -1,0 +1,37 @@
+# Fly.io deployment. Change `app` to a unique name, then:
+#   fly launch --no-deploy --copy-config      (first time only)
+#   fly secrets set OPENAI_API_KEY=sk-...
+#   fly deploy
+app = "gridwise-bup-2026"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  LOG_LEVEL = "INFO"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Always on: judges must reach the service during the whole evaluation window, no cold starts.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 40
+    hard_limit = 80
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "15s"
+    method = "GET"
+    path = "/health"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

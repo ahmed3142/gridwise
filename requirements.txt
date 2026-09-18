@@ -1,0 +1,9 @@
+# Runtime dependencies (exact pins for reproducible builds; full transitive lock in requirements.lock)
+fastapi==0.141.1
+starlette==1.6.0
+uvicorn[standard]==0.53.0
+pydantic==2.13.5
+openai==3.15.0
+numpy==2.5.3
+scipy==1.18.1
+python-dotenv==1.2.3

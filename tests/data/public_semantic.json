@@ -1,0 +1,127 @@
+{
+  "_comment": "Test fixture ONLY: what a correct LLM answer looks like for each public sample note. Used by the offline fake LLM client; the application never reads this file.",
+  "answers": {
+    "Facilities will wash the rooftop solar panels from noon until 2 PM. During cleaning, usable solar should be treated as roughly 25% of the forecast.": {
+      "time_evidence": "from noon until 2 PM", "quantity_evidence": "roughly 25% of the forecast",
+      "applies_to_schedule": true, "directive_type": "solar_reduction",
+      "time_windows": [{"start_hour": 12, "start_minute": 0, "end_hour": 14, "end_minute": 0}],
+      "quantity_value": 25, "quantity_unit": "percent_remaining",
+      "explanation": "Panel washing leaves about 25% of forecast solar from 12:00 to 14:00."
+    },
+    "The sports office moved next month's registration deadline.": {
+      "time_evidence": "next month's", "quantity_evidence": "",
+      "applies_to_schedule": false, "directive_type": "no_op", "time_windows": [],
+      "quantity_value": null, "quantity_unit": null,
+      "explanation": "Unrelated administrative news; no effect on the energy schedule."
+    },
+    "The battery charger will be isolated from 2 AM until 5 AM for electrical maintenance.": {
+      "time_evidence": "from 2 AM until 5 AM", "quantity_evidence": "",
+      "applies_to_schedule": true, "directive_type": "no_charge_window",
+      "time_windows": [{"start_hour": 2, "start_minute": 0, "end_hour": 5, "end_minute": 0}],
+      "quantity_value": null, "quantity_unit": null,
+      "explanation": "Charger isolated, so no charging from 02:00 to 05:00."
+    },
+    "Keep at least 50% of the battery capacity stored in the battery from 6 PM until 9 PM for emergency operations.": {
+      "time_evidence": "from 6 PM until 9 PM", "quantity_evidence": "at least 50% of the battery capacity",
+      "applies_to_schedule": true, "directive_type": "minimum_battery_reserve",
+      "time_windows": [{"start_hour": 18, "start_minute": 0, "end_hour": 21, "end_minute": 0}],
+      "quantity_value": 50, "quantity_unit": "percent_of_capacity",
+      "explanation": "Half of the battery capacity must be held from 18:00 to 21:00."
+    },
+    "For protection testing, the battery must not discharge from 6 PM until 8 PM.": {
+      "time_evidence": "from 6 PM until 8 PM", "quantity_evidence": "",
+      "applies_to_schedule": true, "directive_type": "no_discharge_window",
+      "time_windows": [{"start_hour": 18, "start_minute": 0, "end_hour": 20, "end_minute": 0}],
+      "quantity_value": null, "quantity_unit": null,
+      "explanation": "No battery discharge from 18:00 to 20:00 during protection testing."
+    },
+    "From 6 PM until 9 PM, campus grid import must not exceed 155 kWh in any hour because the feeder is operating under a temporary limit.": {
+      "time_evidence": "From 6 PM until 9 PM", "quantity_evidence": "must not exceed 155 kWh in any hour",
+      "applies_to_schedule": true, "directive_type": "max_grid_window",
+      "time_windows": [{"start_hour": 18, "start_minute": 0, "end_hour": 21, "end_minute": 0}],
+      "quantity_value": 155, "quantity_unit": "kwh",
+      "explanation": "Grid import capped at 155 kWh per hour from 18:00 to 21:00."
+    },
+    "Cloud cover during panel inspection will leave about half of the forecast solar output from 10 AM until noon.": {
+      "time_evidence": "from 10 AM until noon", "quantity_evidence": "about half of the forecast solar output",
+      "applies_to_schedule": true, "directive_type": "solar_reduction",
+      "time_windows": [{"start_hour": 10, "start_minute": 0, "end_hour": 12, "end_minute": 0}],
+      "quantity_value": 0.5, "quantity_unit": "fraction_remaining",
+      "explanation": "About half of forecast solar remains from 10:00 to 12:00."
+    },
+    "The charging circuit will be unavailable from 2 PM until 4 PM.": {
+      "time_evidence": "from 2 PM until 4 PM", "quantity_evidence": "",
+      "applies_to_schedule": true, "directive_type": "no_charge_window",
+      "time_windows": [{"start_hour": 14, "start_minute": 0, "end_hour": 16, "end_minute": 0}],
+      "quantity_value": null, "quantity_unit": null,
+      "explanation": "No charging from 14:00 to 16:00."
+    },
+    "The library is extending book-return hours next week.": {
+      "time_evidence": "next week", "quantity_evidence": "",
+      "applies_to_schedule": false, "directive_type": "no_op", "time_windows": [],
+      "quantity_value": null, "quantity_unit": null,
+      "explanation": "Library news for next week; no energy impact."
+    },
+    "Keep at least 90 kWh in the battery from 6 PM until 10 PM for emergency services.": {
+      "time_evidence": "from 6 PM until 10 PM", "quantity_evidence": "at least 90 kWh",
+      "applies_to_schedule": true, "directive_type": "minimum_battery_reserve",
+      "time_windows": [{"start_hour": 18, "start_minute": 0, "end_hour": 22, "end_minute": 0}],
+      "quantity_value": 90, "quantity_unit": "kwh",
+      "explanation": "At least 90 kWh must stay in the battery from 18:00 to 22:00."
+    },
+    "The evening transformer limit is 180 kWh of grid import from 7 PM until 9 PM.": {
+      "time_evidence": "from 7 PM until 9 PM", "quantity_evidence": "180 kWh of grid import",
+      "applies_to_schedule": true, "directive_type": "max_grid_window",
+      "time_windows": [{"start_hour": 19, "start_minute": 0, "end_hour": 21, "end_minute": 0}],
+      "quantity_value": 180, "quantity_unit": "kwh",
+      "explanation": "Grid import limited to 180 kWh per hour from 19:00 to 21:00."
+    },
+    "Battery charging is disabled from 11 AM until 1 PM while technicians inspect the charger.": {
+      "time_evidence": "from 11 AM until 1 PM", "quantity_evidence": "",
+      "applies_to_schedule": true, "directive_type": "no_charge_window",
+      "time_windows": [{"start_hour": 11, "start_minute": 0, "end_hour": 13, "end_minute": 0}],
+      "quantity_value": null, "quantity_unit": null,
+      "explanation": "No charging from 11:00 to 13:00."
+    },
+    "Do not discharge the battery from 5 PM until 7 PM during relay testing.": {
+      "time_evidence": "from 5 PM until 7 PM", "quantity_evidence": "",
+      "applies_to_schedule": true, "directive_type": "no_discharge_window",
+      "time_windows": [{"start_hour": 17, "start_minute": 0, "end_hour": 19, "end_minute": 0}],
+      "quantity_value": null, "quantity_unit": null,
+      "explanation": "No discharge from 17:00 to 19:00."
+    },
+    "Expect an 80% reduction in rooftop solar between 11 AM and 2 PM because of inverter work.": {
+      "time_evidence": "between 11 AM and 2 PM", "quantity_evidence": "an 80% reduction in rooftop solar",
+      "applies_to_schedule": true, "directive_type": "solar_reduction",
+      "time_windows": [{"start_hour": 11, "start_minute": 0, "end_hour": 14, "end_minute": 0}],
+      "quantity_value": 80, "quantity_unit": "percent_reduction",
+      "explanation": "Inverter work removes 80% of solar from 11:00 to 14:00."
+    },
+    "The student affairs office will publish club notices tomorrow.": {
+      "time_evidence": "tomorrow", "quantity_evidence": "",
+      "applies_to_schedule": false, "directive_type": "no_op", "time_windows": [],
+      "quantity_value": null, "quantity_unit": null,
+      "explanation": "Unrelated notice; no energy impact."
+    },
+    "The data center requires at least 80 kWh to remain in the battery from 6 PM until 10 PM.": {
+      "time_evidence": "from 6 PM until 10 PM", "quantity_evidence": "at least 80 kWh",
+      "applies_to_schedule": true, "directive_type": "minimum_battery_reserve",
+      "time_windows": [{"start_hour": 18, "start_minute": 0, "end_hour": 22, "end_minute": 0}],
+      "quantity_value": 80, "quantity_unit": "kwh",
+      "explanation": "At least 80 kWh reserved from 18:00 to 22:00."
+    },
+    "Grid intake must stay at or below 190 kWh from 7 PM until 10 PM while the substation is constrained.": {
+      "time_evidence": "from 7 PM until 10 PM", "quantity_evidence": "at or below 190 kWh",
+      "applies_to_schedule": true, "directive_type": "max_grid_window",
+      "time_windows": [{"start_hour": 19, "start_minute": 0, "end_hour": 22, "end_minute": 0}],
+      "quantity_value": 190, "quantity_unit": "kwh",
+      "explanation": "Grid intake capped at 190 kWh per hour from 19:00 to 22:00."
+    },
+    "A seminar room booking was moved to next week.": {
+      "time_evidence": "next week", "quantity_evidence": "",
+      "applies_to_schedule": false, "directive_type": "no_op", "time_windows": [],
+      "quantity_value": null, "quantity_unit": null,
+      "explanation": "Room booking news; no energy impact."
+    }
+  }
+}

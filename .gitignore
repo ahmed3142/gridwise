@@ -1,0 +1,24 @@
+# secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# local artifacts
+reports/
+*.log
+.DS_Store
+Thumbs.db

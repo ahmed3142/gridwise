@@ -1,0 +1,24 @@
+# Never ship secrets or local state into the image
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+reports
+tests
+scripts
+docs
+*.md
+!README.md
+.github
+fly.toml
+railway.json
