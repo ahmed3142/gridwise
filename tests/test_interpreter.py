@@ -168,3 +168,11 @@ def test_prompt_examples_do_not_copy_public_notes(public_cases):
     for case in public_cases:
         for note in case["input"]["operator_notes"]:
             assert note not in SYSTEM_PROMPT
+
+
+def test_crosscheck_flags_long_wraparound_ampm_slip():
+    note = "Charging is disabled from 10 to 2 while the charger is serviced."
+    slip = S("no_charge_window", [W(10, 2)], te="from 10 to 2")
+    assert any("wraps past midnight" in i for i in crosscheck(slip, note))
+    overnight = S("no_charge_window", [W(22, 2)], te="from 10 PM to 2 AM")
+    assert crosscheck(overnight, "Charging is disabled from 10 PM to 2 AM.") == []

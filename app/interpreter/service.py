@@ -105,9 +105,49 @@ class InterpretationService:
     # ------------------------------------------------------------------ public API
 
     async def interpret(self, notes: list[str], battery: Battery, deadline: float) -> list[NoteResult]:
-        return list(
-            await asyncio.gather(*(self._interpret_note(i, notes, battery, deadline) for i in range(len(notes))))
+        """One task per note; a failure in one note never affects the others (failure isolation)."""
+        outcomes = await asyncio.gather(
+            *(self._interpret_note(i, notes, battery, deadline) for i in range(len(notes))), return_exceptions=True
         )
+        results: list[NoteResult] = []
+        for i, outcome in enumerate(outcomes):
+            if isinstance(outcome, NoteResult):
+                results.append(outcome)
+                continue
+            self._record(False, type(outcome).__name__)
+            log.error("note %d: interpretation crashed (%s); using no_op", i, type(outcome).__name__)
+            results.append(
+                NoteResult(
+                    directive=no_op(i, "Interpretation failed unexpectedly; treated as no_op.", "fallback"),
+                    degraded=True,
+                    error=type(outcome).__name__,
+                )
+            )
+        return results
+
+    async def warm_up(self) -> None:
+        """Best-effort background warm-up: resolve models and make one real structured call, so the
+        provider's first-use schema processing does not land on a judged request. Never raises."""
+        if not self.configured:
+            return
+        try:
+            await self.client.resolve_models()
+            chain = await self.client.model_chain()
+            note = "Charging is not allowed from 1 AM to 2 AM."
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_message([note], 0)},
+            ]
+            for model in chain:
+                try:
+                    await self.client.interpret(model, messages, timeout=20)
+                    self._record(True, None)
+                    log.info("warm-up call to %s succeeded", model)
+                except LLMCallError as exc:
+                    self._record(False, exc.kind)
+                    log.warning("warm-up call to %s failed: %s", model, exc.kind)
+        except Exception as exc:  # pragma: no cover - warm-up must never affect the service
+            log.warning("warm-up skipped (%s)", type(exc).__name__)
 
     async def reinterpret(
         self, index: int, notes: list[str], battery: Battery, deadline: float, feedback: list[str]

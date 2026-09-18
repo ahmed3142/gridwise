@@ -142,6 +142,13 @@ def time_issues(sem: SemanticInterpretation, note: str) -> list[str]:
             allowed |= {s + n, (s + n) % 24}
     issues = []
     for w in sem.time_windows:
+        start = w.start_hour * 60 + w.start_minute
+        end = w.end_hour * 60 + w.end_minute
+        if end < start and (24 * 60 - start + end) > 12 * 60:
+            issues.append(
+                f"window {w.start_hour:02d}:{w.start_minute:02d}-{w.end_hour:02d}:{w.end_minute:02d} wraps past "
+                f"midnight and lasts {(24 * 60 - start + end) / 60:g} hours; check AM/PM"
+            )
         for label, value in (("start", w.start_hour), ("end", w.end_hour)):
             if value not in allowed:
                 issues.append(

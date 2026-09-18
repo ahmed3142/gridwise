@@ -44,8 +44,8 @@ async def lifespan(app: FastAPI):
     if client is None:
         log.warning("OPENAI_API_KEY is not set: the service starts, but notes will be treated as no_op")
     else:
-        # Resolve the model in the background; /health never waits for the LLM provider.
-        app.state.warmup = asyncio.create_task(client.resolve_models())
+        # Resolve models + one warm-up call in the background; /health never waits for the provider.
+        app.state.warmup = asyncio.create_task(app.state.service.warm_up())
     log.info("GridWise %s ready (prompt %s)", __version__, PROMPT_VERSION)
     yield
     if client is not None:

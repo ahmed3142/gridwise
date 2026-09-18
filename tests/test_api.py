@@ -95,6 +95,7 @@ BAD_400 = {
     "negative_capacity": lambda d: d["battery"].update(capacity_kwh=-1),
     "blank_scenario": lambda d: d.update(scenario_id=" "),
     "numeric_scenario": lambda d: d.update(scenario_id=101),
+    "huge_note": lambda d: d.update(operator_notes=["x" * 5000]),
 }
 
 
@@ -241,5 +242,31 @@ def test_infeasible_interpretation_triggers_reinterpretation(public_cases):
         body = client.post("/optimize-energy", json=case["input"]).json()
         assert body["directive_interpretation"][0]["structured_adjustment"] == {"hours": [18, 19, 20], "minimum_energy_kwh": 100}
         assert response_violations(case["input"], body) == []
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_one_crashing_note_does_not_break_the_others(public_cases):
+    """Failure isolation: an unexpected exception while interpreting one note -> that note is no_op."""
+    case = public_cases[5]  # three notes
+    fake = FakeLLMClient()
+    original = fake.interpret
+    bad_note = case["input"]["operator_notes"][1]
+
+    async def flaky(model, messages, timeout):
+        from tests.fakes import target_note
+        if target_note(messages) == bad_note:
+            raise RuntimeError("boom")
+        return await original(model, messages, timeout)
+
+    fake.interpret = flaky
+    client = make_client(fake)
+    try:
+        r = client.post("/optimize-energy", json=case["input"])
+        assert r.status_code == 200
+        entries = r.json()["directive_interpretation"]
+        assert entries[0]["directive_type"] == "solar_reduction"
+        assert entries[1]["directive_type"] == "no_op"
+        assert r.headers.get("x-gridwise-degraded") == "true"
     finally:
         client.__exit__(None, None, None)

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictStr, StringConstraints, field_validator, model_validator
 
 DIRECTIVE_TYPES: tuple[str, ...] = (
     "solar_reduction",
@@ -36,6 +36,9 @@ BatteryAction = Literal["charge", "discharge", "idle"]
 # strict=True: JSON numbers only (ints are accepted for floats); no numeric strings, no booleans.
 NonNegNumber = Annotated[float, Field(strict=True, ge=0, allow_inf_nan=False)]
 HourIndex = Annotated[int, Field(strict=True, ge=0, le=23)]
+# Generous caps that no real note or id reaches; they bound LLM cost on a public endpoint.
+NoteText = Annotated[str, StringConstraints(strict=True, max_length=4000)]
+ScenarioId = Annotated[str, StringConstraints(strict=True, max_length=256)]
 
 
 class _Lenient(BaseModel):
@@ -66,8 +69,8 @@ class Battery(_Lenient):
 
 
 class OptimizeRequest(_Lenient):
-    scenario_id: StrictStr
-    operator_notes: Annotated[list[StrictStr], Field(min_length=1, max_length=3)]
+    scenario_id: ScenarioId
+    operator_notes: Annotated[list[NoteText], Field(min_length=1, max_length=3)]
     hours: Annotated[list[HourEntry], Field(min_length=24, max_length=24)]
     battery: Battery
 

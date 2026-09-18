@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-PROMPT_VERSION = "2026-09-18.4"
+PROMPT_VERSION = "2026-09-18.5"
 
 _RULES = """You interpret campus-operator notes for GridWise, a service that plans ONE operating day (24 hourly slots) of grid purchases, rooftop-solar use and battery charging/discharging for a university campus.
 
@@ -39,7 +39,7 @@ If a note seems to contain several constraints, return the main one (usually the
 - Several separate periods -> one window per period.
 - "all day", "the whole day", "24 hours", or a relevant constraint with no time at all -> one window 00:00-24:00.
 - Explicit slot numbers ("slots 18 to 20 inclusive", "hours 13 and 14") -> windows covering exactly those slots (18:00-21:00; 13:00-15:00).
-- Times without AM/PM: use context ("from 1 until 3 in the afternoon" -> 13:00-15:00; solar work happens in daylight, so "from one until three" for solar -> 13:00-15:00).
+- Times without AM/PM: use context ("from 1 until 3 in the afternoon" -> 13:00-15:00; solar work happens in daylight, so "from one until three" for solar -> 13:00-15:00; morning = AM; afternoon/evening/tonight/evening peak = PM). With no cue at all, choose the reading where the end is after the start within 07:00-22:00.
 - Named periods only when no clock time is given: morning 06:00-12:00, afternoon 12:00-17:00, evening 17:00-21:00, night 21:00-24:00, overnight 00:00-06:00.
 - Non-energy notes (no_op): time_windows = [].
 
@@ -50,7 +50,9 @@ If a note seems to contain several constraints, return the main one (usually the
   * What is LOST -> percent_reduction or fraction_reduction. Examples: "an 80% reduction", "reduced BY 80%", "drop by 30%", "cut by 40%", "30% lower", "40% less", "down 60%", "lose three quarters".
   * No solar at all ("zero output", "panels offline", "PV isolated") -> percent_remaining 0.
 - minimum_battery_reserve: an energy amount -> kwh (or mwh / wh exactly as written, e.g. "0.12 MWh" -> 0.12 mwh). A share of capacity or state of charge ("50% of the battery capacity", "at least 40% charged", "SOC above 30%", "half full") -> percent_of_capacity or fraction_of_capacity. An amount ABOVE the normal minimum ("20 kWh above the minimum") -> kwh_above_minimum.
-- max_grid_window: the per-hour limit -> kwh (a kW limit uses the same number as kwh) or mwh as written. "No grid import" -> 0 kwh.
+- max_grid_window: the per-hour limit -> kwh (a kW limit uses the same number as kwh) or mwh as written. "No grid import", "grid outage", "load-shedding" with no number -> 0 kwh.
+- "units" of electricity means kWh ("150 units" -> 150 kwh).
+- Implied values: a battery "kept full" / "fully charged" -> 100 percent_of_capacity; solar "offline" / "unavailable" / "disconnected" -> 0 percent_remaining.
 - no_charge_window, no_discharge_window, no_op: quantity_value = null and quantity_unit = null.
 
 # Evidence and explanation

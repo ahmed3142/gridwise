@@ -32,3 +32,4 @@ python scripts/judge.py --url http://127.0.0.1:8080
 - [ ] No secret appears in the git history: `git log -p | grep -E "sk-[A-Za-z0-9]{10,}"` prints nothing.
 - [ ] The repo is private now, with a reminder set to flip it to public after 23:00.
 - [ ] The video link opens in an incognito window.
+- [ ] Scrub the video and any screenshots for secrets: no `.env`, no `fly secrets set` command, no dashboard with the key visible.
