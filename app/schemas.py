@@ -34,7 +34,8 @@ DirectiveType = Literal[
 BatteryAction = Literal["charge", "discharge", "idle"]
 
 # strict=True: JSON numbers only (ints are accepted for floats); no numeric strings, no booleans.
-NonNegNumber = Annotated[float, Field(strict=True, ge=0, allow_inf_nan=False)]
+# Upper bound 1e9: far above any campus value, and keeps the LP numerically well-scaled.
+NonNegNumber = Annotated[float, Field(strict=True, ge=0, le=1e9, allow_inf_nan=False)]
 HourIndex = Annotated[int, Field(strict=True, ge=0, le=23)]
 # Generous caps that no real note or id reaches; they bound LLM cost on a public endpoint.
 NoteText = Annotated[str, StringConstraints(strict=True, max_length=4000)]

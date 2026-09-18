@@ -43,9 +43,11 @@ def http(method: str, url: str, payload: dict | None = None, timeout: float = 35
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read()
             status = resp.status
-            headers = dict(resp.headers)
+            headers = {k.lower(): v for k, v in resp.headers.items()}
     except urllib.error.HTTPError as exc:
-        body, status, headers = exc.read(), exc.code, dict(exc.headers)
+        body, status, headers = exc.read(), exc.code, {k.lower(): v for k, v in exc.headers.items()}
+    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+        body, status, headers = json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), 0, {}
     elapsed = (time.perf_counter() - started) * 1000
     try:
         parsed = json.loads(body) if body else None
@@ -57,7 +59,7 @@ def http(method: str, url: str, payload: dict | None = None, timeout: float = 35
 def score_case(base: str, case: dict) -> dict:
     status, body, ms, headers = http("POST", f"{base}/optimize-energy", case["input"])
     result = {"id": case.get("id", case["input"].get("scenario_id")), "status": status, "ms": ms,
-              "degraded": headers.get("X-GridWise-Degraded") == "true", "problems": []}
+              "degraded": headers.get("x-gridwise-degraded") == "true", "problems": []}
     if status != 200 or not isinstance(body, dict):
         result["problems"].append(f"HTTP {status}: {str(body)[:200]}")
         return result
@@ -85,9 +87,10 @@ def score_case(base: str, case: dict) -> dict:
     result["fields"] = {k: f"{v}/{notes}" for k, v in fields.items()}
     ref = expected.get("total_cost_bdt")
     cost = body.get("total_cost_bdt")
-    if isinstance(ref, (int, float)) and isinstance(cost, (int, float)) and cost > 0:
+    if isinstance(ref, (int, float)) and isinstance(cost, (int, float)):
         result["cost"] = cost
-        result["quality"] = min(1.0, ref / cost) if result.get("valid_under_truth", True) else 0.0
+        ratio = 1.0 if cost <= max(ref, 0) + 0.01 else (min(1.0, ref / cost) if cost > 0 else 1.0)
+        result["quality"] = ratio if result.get("valid_under_truth", True) else 0.0
     return result
 
 

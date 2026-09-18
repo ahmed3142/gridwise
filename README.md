@@ -26,27 +26,46 @@ battery schedule that obeys every directive and every GridWise energy rule.
 
 ## 1. Quickstart (local, about 3 minutes)
 
-Requires Python 3.12. The commands work in bash, zsh, PowerShell and cmd. On Windows, use
-`.venv\Scripts\python` in place of `.venv/bin/python`.
+Requires Python 3.12.
+
+**Linux / macOS (bash or zsh):**
 
 ```bash
 git clone <this-repo-url> gridwise && cd gridwise
-python -m venv .venv
-.venv/bin/python -m pip install -r requirements-dev.txt   # Windows: .venv\Scripts\python -m pip install -r requirements-dev.txt
-cp .env.example .env                                         # Windows: copy .env.example .env
-# edit .env and set OPENAI_API_KEY=sk-...
-.venv/bin/python -m app                                      # serves on http://127.0.0.1:8080
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt
+cp .env.example .env                  # then edit .env and set OPENAI_API_KEY=sk-...
+.venv/bin/python -m app               # serves on http://127.0.0.1:8080
 ```
 
 In a second terminal:
 
 ```bash
-curl http://127.0.0.1:8080/health
-# {"status":"ok"}
-
-python scripts/make_request.py SAMPLE-06 > sample.json       # extracts one public case input
-curl -X POST http://127.0.0.1:8080/optimize-energy -H "Content-Type: application/json" --data @sample.json
+curl http://127.0.0.1:8080/health     # {"status":"ok"}
+.venv/bin/python scripts/make_request.py SAMPLE-06 > sample.json
+curl -X POST http://127.0.0.1:8080/optimize-energy -H "Content-Type: application/json" --data-binary @sample.json
 ```
+
+**Windows (PowerShell):**
+
+```powershell
+git clone <this-repo-url> gridwise; cd gridwise
+py -3.12 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements-dev.txt
+Copy-Item .env.example .env           # then edit .env and set OPENAI_API_KEY=sk-...
+.venv\Scripts\python -m app
+```
+
+In a second PowerShell window:
+
+```powershell
+curl.exe http://127.0.0.1:8080/health
+.venv\Scripts\python scripts\make_request.py SAMPLE-06 | Out-File -Encoding ascii sample.json
+curl.exe -X POST http://127.0.0.1:8080/optimize-energy -H "Content-Type: application/json" --data-binary "@sample.json"
+```
+
+Every `python scripts/...` command below means the venv's interpreter
+(`.venv/bin/python` or `.venv\Scripts\python`).
 
 ### Run the public sample pack like the judge does
 
@@ -145,6 +164,9 @@ Both configurations keep one instance always running. That matters because the j
 | `REQUEST_DEADLINE_SECONDS` | `24` | End-to-end budget per request. The judge limit is 30 s. |
 | `LLM_MAX_CONCURRENCY` | `48` | Maximum simultaneous LLM calls, which protects rate limits. |
 | `INTERPRETATION_CACHE_SIZE` | `2048` | Number of cached LLM answers. Repeated notes cost no LLM call. |
+| `LLM_MAX_OUTPUT_TOKENS` | `2500` | Output cap per LLM call. |
+| `MAX_BODY_BYTES` | `1000000` | Largest accepted request body. Larger bodies get a 400 and are never buffered. |
+| `WEB_CONCURRENCY` | `1` | Uvicorn worker processes. |
 | `PORT` / `HOST` | `8080` / `0.0.0.0` | Bind address. |
 | `LOG_LEVEL` | `INFO` | Log verbosity. |
 
@@ -283,11 +305,11 @@ Dockerfile, fly.toml, railway.json, requirements*.txt, requirements.lock, .env.e
 
 * No keys are stored in the repository or the image. `.env` is ignored by both git and Docker, and
   `.env.example` contains only empty values.
-* Logs contain the method, path, status, timing, request id and error *types* only. They never
+* Logs contain the method, path, status, timing, request id, error types and short provider error messages, with the configured key and anything key-shaped redacted. They never
   contain request bodies, prompts, keys or stack traces. Provider error text is scrubbed of
   anything that looks like a key.
 * Before making the repository public, run
-  `git log -p | grep -E "sk-[A-Za-z0-9]{10,}"`. It must print nothing. Rotate the key after the
+  `git log -p --all | grep -nE "sk-[A-Za-z0-9_-]{20,}"`. It must print nothing. Rotate the key after the
   evaluation window.
 
 ## 8. Known limitations

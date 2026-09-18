@@ -49,7 +49,21 @@ def numbers_in(text: str) -> set[float]:
             found.add(float(value))
         if tok == "hundred":
             prev = _UNITS.get(tokens[i - 1], 1) if i else 1
-            found.add(float(prev * 100))
+            base = prev * 100
+            found.add(float(base))
+            # "two hundred and fifty", "one hundred twenty five"
+            j = i + 1
+            if j < len(tokens) and tokens[j] == "and":
+                j += 1
+            rest = 0
+            if j < len(tokens) and tokens[j] in _TENS:
+                rest = _TENS[tokens[j]]
+                if j + 1 < len(tokens) and tokens[j + 1] in _UNITS and 0 < _UNITS[tokens[j + 1]] < 10:
+                    rest += _UNITS[tokens[j + 1]]
+            elif j < len(tokens) and tokens[j] in _UNITS:
+                rest = _UNITS[tokens[j]]
+            if rest:
+                found.add(float(base + rest))
         if tok in _FRACTIONS:
             base = _FRACTIONS[tok]
             numerator = _UNITS.get(tokens[i - 1], 1) if i else 1
@@ -57,6 +71,9 @@ def numbers_in(text: str) -> set[float]:
                 numerator = 1
             found.add(base * numerator)
             found.add(base)
+    for num, den in re.findall(r"\b(\d+)\s*/\s*(\d+)\b", text):  # "3/4"
+        if int(den):
+            found.add(int(num) / int(den))
     return found
 
 
@@ -70,6 +87,12 @@ def quantity_issues(sem: SemanticInterpretation, note: str) -> list[str]:
     value = float(sem.quantity_value)
     if value == 0:
         return []  # "no solar", "no grid import" legitimately state zero without a digit
+    if value in (1.0, 100.0) and re.search(
+        r"\bfull(?:y)?\b|\btopped[- ]up\b|\bentire(?:ly)?\b|\bcompletely\b|\boffline\b|\bunavailable\b"
+        r"|\bdisconnected\b|\bisolated\b|\bshut\b|\bzero\b|\bno (?:solar|pv|generation)\b",
+        note.lower(),
+    ):
+        return []  # implied values the prompt mandates ("kept full" -> 100 percent_of_capacity)
     stated = numbers_in(note)
     candidates: set[float] = set()
     for n in stated:
@@ -88,7 +111,7 @@ def _explicit_clock_hours(note: str) -> set[int]:
     for h, _m in _CLOCK_RE.findall(note):
         hours.add(int(h))
     low = note.lower()
-    if "noon" in low or "midday" in low or "mid-day" in low:
+    if re.search(r"\b(?:noon|midday|mid-day)\b", low):  # whole words: "afternoon" contains "noon"
         hours.add(12)
     if "midnight" in low:
         hours |= {0, 24}
@@ -116,7 +139,15 @@ def _durations(note: str) -> set[int]:
                 continue
         if float(value).is_integer():
             out.add(int(value))
+    for minutes in re.findall(r"\b(\d+)\s*(?:minutes?|mins?)\b", note, re.IGNORECASE):  # "for 90 minutes"
+        m = int(minutes)
+        out |= {m // 60, -(-m // 60)}
     return out
+
+
+# The prompt's own named periods are legitimate window boundaries.
+_PERIODS = {"morning": (6, 12), "afternoon": (12, 17), "evening": (17, 21), "night": (21, 24),
+            "tonight": (21, 24), "overnight": (0, 6)}
 
 
 def time_issues(sem: SemanticInterpretation, note: str) -> list[str]:
@@ -136,15 +167,23 @@ def time_issues(sem: SemanticInterpretation, note: str) -> list[str]:
             allowed |= {b + 12, (b + 12) % 24}
         if slot_language:  # "slots 18 through 20 inclusive" -> window ends at 21:00
             allowed |= {b + 1, (b + 1) % 24}
+    for word, (a, b) in _PERIODS.items():
+        if re.search(rf"\b{word}\b", note, re.IGNORECASE):
+            allowed |= {a, b}
+    durations = _durations(note)
     starts = {w.start_hour for w in sem.time_windows}
     for s in starts:  # "for N hours starting at X"
-        for n in _durations(note):
+        for n in durations:
             allowed |= {s + n, (s + n) % 24}
+    for e in explicit | {24}:  # "the two hours before midnight", "the last three hours of the day"
+        for n in durations:
+            allowed |= {e - n, (e - n) % 24}
     issues = []
     for w in sem.time_windows:
         start = w.start_hour * 60 + w.start_minute
         end = w.end_hour * 60 + w.end_minute
-        if end < start and (24 * 60 - start + end) > 12 * 60:
+        both_written = w.start_hour in explicit and (w.end_hour in explicit or w.end_hour % 24 in explicit)
+        if end < start and (24 * 60 - start + end) > 12 * 60 and not both_written:
             issues.append(
                 f"window {w.start_hour:02d}:{w.start_minute:02d}-{w.end_hour:02d}:{w.end_minute:02d} wraps past "
                 f"midnight and lasts {(24 * 60 - start + end) / 60:g} hours; check AM/PM"
@@ -158,12 +197,22 @@ def time_issues(sem: SemanticInterpretation, note: str) -> list[str]:
     return issues
 
 
+def _evidence_tokens(text: str) -> list[str]:
+    """Tokens that ignore formatting-only differences: '2 p.m.' ~ '2 PM', '6pm' ~ '6 PM', '1,200' ~ '1200'."""
+    text = re.sub(r"\b([ap])\.\s*m\.?", r"\1m", text.lower())
+    text = re.sub(r"(\d),(\d{3})\b", r"\1\2", text)
+    text = re.sub(r"(\d)([a-z])", r"\1 \2", text)
+    return [t for t in _tokens(text) if t not in {"to", "and", "until", "till", "from", "the"}]
+
+
 def evidence_issues(sem: SemanticInterpretation, note: str) -> list[str]:
-    note_tokens = set(_tokens(note))
+    if not sem.applies_to_schedule or sem.directive_type == "no_op":
+        return []  # evidence of a no_op changes nothing in the output: never re-ask for it
+    note_tokens = set(_evidence_tokens(note))
     issues = []
     for name in ("time_evidence", "quantity_evidence"):
         text = getattr(sem, name) or ""
-        missing = [t for t in _tokens(text) if t not in note_tokens]
+        missing = [t for t in _evidence_tokens(text) if t not in note_tokens]
         if missing:
             issues.append(f"{name} {text!r} is not a verbatim quote from the note (unknown words: {missing[:5]})")
     return issues

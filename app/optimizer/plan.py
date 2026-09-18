@@ -1,11 +1,15 @@
 """Turn an LP solution into the exact `hourly_plan` the judge replays (Problem Statement 09-10).
 
+Rounding strategy: follow the LP's battery-ENERGY trajectory, rounded hour by hour, instead of
+rounding each flow and summing. Rounding errors therefore never accumulate (each hour re-targets the
+LP energy), and every hard per-hour limit is enforced exactly on the reported numbers.
+
 Guarantees on the returned plan (verified again by app.validator before responding):
-* battery_action is derived from the NET battery flow, so an hour is never charge+discharge; idle => 0.
-* Battery flows are rounded to 6 decimals and repaired so they sum to exactly zero, so the replayed
-  energy chain ends exactly at the initial energy (end-of-day neutrality).
-* battery_energy_after_kwh is recomputed from the rounded flows (the same arithmetic the judge uses).
-* grid_kwh is recomputed from the energy-balance equation AFTER rounding, and never negative.
+* battery_action comes from the NET battery flow: never charge+discharge in one hour; idle => 0.
+* Flows respect the (possibly zero) charge/discharge limits of every hour exactly.
+* battery_energy_after_kwh is the running sum of the reported flows (the judge's own arithmetic),
+  never negative and never above capacity; the last hour ends at the initial energy.
+* grid_kwh is recomputed from the energy-balance equation after rounding and is never negative.
 * Totals are computed from the rounded hourly values, so they always match a recalculation.
 """
 
@@ -17,49 +21,42 @@ from ..directives import Directive, clean_number, format_hours
 from .lp import H, Problem, Solution
 
 DECIMALS = 6
-_Q = 10**DECIMALS
 _EPS = 1e-7
 
 
-def _repair_neutrality(units: np.ndarray, cmax_u: np.ndarray, dmax_u: np.ndarray) -> np.ndarray:
-    """Adjust rounded integer flows (units of 1e-6 kWh) so that they sum to exactly zero."""
-    units = units.copy()
-    resid = int(units.sum())
-    if resid == 0:
-        return units
-    for h in np.argsort(-np.abs(units)):
-        if resid == 0:
-            break
-        u = int(units[h])
-        if u == 0:
-            continue  # only touch hours that already act, never create a new action
-        if resid > 0:  # need less charge / more discharge
-            room = u + int(dmax_u[h]) if u < 0 else u  # shrink a charge, or grow a discharge
-            delta = min(resid, room)
-        else:  # need more charge / less discharge
-            room = int(cmax_u[h]) - u if u > 0 else -u
-            delta = -min(-resid, room)
-        units[h] = u - delta
-        resid -= delta
-    return units
-
-
 def build_hourly_plan(p: Problem, sol: Solution) -> list[dict]:
-    net = sol.charge - sol.discharge
-    net = np.where(np.abs(net) < _EPS, 0.0, net)
-    cmax_u = np.floor(p.c_max * _Q + 1e-6).astype(np.int64)
-    dmax_u = np.floor(p.d_max * _Q + 1e-6).astype(np.int64)
-    units = np.clip(np.rint(net * _Q).astype(np.int64), -dmax_u, cmax_u)
-    units = _repair_neutrality(units, cmax_u, dmax_u)
-
+    if sol.plan_problem is not None:  # least-violation plans follow the relaxed limits they were solved with
+        p = sol.plan_problem
+    lp_net = np.asarray(sol.charge, dtype=float) - np.asarray(sol.discharge, dtype=float)
+    initial = float(p.initial)
+    capacity = float(p.capacity)
+    prev = initial
     plan: list[dict] = []
-    cumulative = 0
     for h in range(H):
-        u = int(units[h])
-        cumulative += u
-        charge = u / _Q if u > 0 else 0.0
-        discharge = -u / _Q if u < 0 else 0.0
+        lower = float(p.e_min[h])
+        if h == H - 1:
+            target = initial  # end-of-day neutrality
+        else:
+            target = min(max(round(float(sol.energy[h]), DECIMALS), lower), capacity)
+        flow = 0.0 if abs(float(lp_net[h])) < _EPS else round(target - prev, DECIMALS)
+        # Hard per-hour limits hold exactly (zero inside no-charge / no-discharge windows);
+        # any tiny shortfall is re-targeted by the following hours.
+        if flow > 0:
+            flow = min(flow, float(p.c_max[h]))
+        elif flow < 0:
+            flow = max(flow, -float(p.d_max[h]))
+        if abs(flow) < 1e-9:
+            flow = 0.0
+        energy_after = prev + flow
+        snapped = round(energy_after, DECIMALS)
+        if abs(energy_after - snapped) < 1e-9:
+            energy_after = snapped
+        if h == H - 1 and abs(energy_after - initial) < 1e-6:
+            energy_after = initial
+        prev = energy_after
 
+        charge = flow if flow > 0 else 0.0
+        discharge = -flow if flow < 0 else 0.0
         solar_cap = float(p.solar[h])
         solar_used = min(max(round(float(sol.solar_used[h]), DECIMALS), 0.0), solar_cap)
         grid = float(p.demand[h]) + charge - solar_used - discharge
@@ -72,18 +69,16 @@ def build_hourly_plan(p: Problem, sol: Solution) -> list[dict]:
                 solar_used += extra
                 grid -= extra
 
-        energy_after = float(p.initial) if cumulative == 0 else float(p.initial) + cumulative / _Q
-        action = "charge" if u > 0 else "discharge" if u < 0 else "idle"
+        reported_energy = min(max(energy_after, 0.0), capacity)
+        action = "charge" if flow > 0 else "discharge" if flow < 0 else "idle"
         plan.append(
             {
                 "hour": h,
-                "grid_kwh": clean_number(grid),
-                "solar_used_kwh": clean_number(solar_used),
+                "grid_kwh": clean_number(max(grid, 0.0)),
+                "solar_used_kwh": clean_number(max(solar_used, 0.0)),
                 "battery_action": action,
-                "battery_kwh": clean_number(abs(u) / _Q) if u else 0,
-                "battery_energy_after_kwh": clean_number(energy_after, 9)
-                if cumulative
-                else (int(p.initial) if float(p.initial).is_integer() else float(p.initial)),
+                "battery_kwh": clean_number(abs(flow)) if flow else 0,
+                "battery_energy_after_kwh": clean_number(reported_energy, 9),
             }
         )
     return plan
@@ -137,7 +132,8 @@ def plan_summary(p: Problem, plan: list[dict], totals: dict, directives: list[Di
     peak_hour = max(plan, key=lambda e: float(e["grid_kwh"]))["hour"] if plan else 0
     parts.append(
         f"Grid purchase {clean_number(totals['total_grid_kwh'], 2)} kWh for {clean_number(totals['total_cost_bdt'], 2)} BDT "
-        f"(minimum-cost LP optimum), peak {clean_number(totals['peak_grid_kwh'], 2)} kWh at hour {peak_hour}."
+        f"({'least-violation plan' if sol.relaxed else 'minimum-cost LP optimum'}), "
+        f"peak {clean_number(totals['peak_grid_kwh'], 2)} kWh at hour {peak_hour}."
     )
     if sol.relaxed:
         parts.append(

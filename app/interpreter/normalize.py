@@ -31,10 +31,12 @@ def window_hours(w: TimeWindow) -> tuple[set[int], list[str]]:
     end = eh * 60 + em
     if end > 24 * 60:
         return set(), [f"time window {label} ends after 24:00"]
-    if start == end or (start == 0 and end == 0):
+    if start == end:
         if start == 0:
-            return set(range(24)), []  # 00:00-00:00 / 00:00-24:00: whole day
-        return set(), [f"time window {label} has zero length"]
+            return set(range(24)), []  # 00:00-00:00: whole day
+        # "at 6 PM" read as 18:00-18:00: the single slot that starts there (reported as a problem so
+        # the model is asked to give a proper window first)
+        return {(start // 60) % 24}, [f"time window {label} has zero length"]
     segments = [(start, end)] if end > start else [(start, 24 * 60), (0, end)]
     hours = {
         h
@@ -77,6 +79,12 @@ def normalize(
     strict: bool = True,
 ) -> tuple[Directive, list[str]]:
     explanation = (sem.explanation or "").strip()[:300]
+    if strict and sem.applies_to_schedule != (sem.directive_type != "no_op"):
+        contradiction = [
+            f"applies_to_schedule={sem.applies_to_schedule} contradicts directive_type={sem.directive_type}"
+        ]
+        if sem.directive_type == "no_op" or not sem.applies_to_schedule:
+            return no_op(note_index, explanation or "This note does not change today's energy schedule."), contradiction
     if not sem.applies_to_schedule or sem.directive_type == "no_op":
         return no_op(note_index, explanation or "This note does not change today's energy schedule."), []
 
@@ -93,7 +101,7 @@ def normalize(
         if not strict:
             hours = set(range(24))
     elif not hours and not strict:
-        hours = set(range(24))
+        hours = set(range(24))  # unusable windows: whole day is the only safe reading of a stated rule
 
     factor = reserve = cap = None
     value, unit = sem.quantity_value, sem.quantity_unit
@@ -112,6 +120,8 @@ def normalize(
         else:
             if unit.startswith("fraction") and value > 1:
                 problems.append(f"{unit} must be between 0 and 1 (got {value}); use a percent unit for percentages")
+                if not strict and value <= 100:
+                    value = value / 100.0  # lenient: "fraction 20" almost certainly meant 20 %
             if unit.startswith("percent") and 0 < value < 1 and "%" not in note_text and "percent" not in note_text.lower():
                 problems.append(
                     f"quantity_value {value} with unit {unit} means {value}%; if the note states a fraction, use a fraction_* unit"
@@ -122,9 +132,7 @@ def normalize(
                 reserve = round(_energy_kwh(value, unit, battery), 6)
             else:
                 cap = round(_energy_kwh(value, unit, battery), 6)
-    elif value is not None or unit is not None:
-        if strict:
-            problems.append(f"{dtype} takes no quantity; quantity_value and quantity_unit must be null")
+    # A stray quantity on a no-charge / no-discharge note is harmless and ignored (no needless re-ask).
 
     if not strict:
         if dtype == "solar_reduction":

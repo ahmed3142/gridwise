@@ -163,10 +163,13 @@ def schedule_violations(request: Any, directives: list[dict], response: dict, to
     grids: list[float] = []
     for h in range(24):
         e = by_hour[h]
-        bad = [k for k in PLAN_NUMERIC if not _num(e.get(k)) or e.get(k) < 0]
-        if bad:
-            v.append(f"hour {h}: {bad} must be finite non-negative numbers")
+        non_numeric = [k for k in PLAN_NUMERIC if not _num(e.get(k))]
+        if non_numeric:
+            v.append(f"hour {h}: {non_numeric} must be finite numbers")
             continue
+        negative = [k for k in PLAN_NUMERIC if e.get(k) < 0]
+        if negative:  # record, but keep replaying so later hours are judged correctly
+            v.append(f"hour {h}: {negative} must be non-negative")
         action = e.get("battery_action")
         if action not in ("charge", "discharge", "idle"):
             v.append(f"hour {h}: battery_action {action!r} invalid")

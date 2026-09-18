@@ -29,7 +29,7 @@ python scripts/judge.py --url http://127.0.0.1:8080
 - [ ] `scripts/judge.py --url <public URL> --repeat 2 --concurrency 4` reports 10/10 passed, 0 non-200 responses, p95 under 5 s, and no `DEGRADED` flag.
 - [ ] `GET <public URL>/version` shows the pinned `primary_model` and `llm_status.llm_calls_failed` equal to 0.
 - [ ] A logged-out `docker pull` of the tag works. `docker run` without a key still returns `/health` 200.
-- [ ] No secret appears in the git history: `git log -p | grep -E "sk-[A-Za-z0-9]{10,}"` prints nothing.
+- [ ] No secret appears in the git history: `git log -p --all | grep -nE "sk-[A-Za-z0-9_-]{20,}"` prints nothing (this also matches `sk-proj-` keys).
 - [ ] The repo is private now, with a reminder set to flip it to public after 23:00.
 - [ ] The video link opens in an incognito window.
 - [ ] Scrub the video and any screenshots for secrets: no `.env`, no `fly secrets set` command, no dashboard with the key visible.

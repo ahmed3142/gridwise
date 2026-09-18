@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -47,9 +48,16 @@ class _ModelState:
 _SECRET_RE = re.compile(r"(sk-[A-Za-z0-9_\-*]{4,}|Bearer\s+[A-Za-z0-9._\-]+)")
 
 
+_CONFIGURED_SECRETS: list[str] = []
+
+
 def _short(exc: Exception) -> str:
-    """One-line, secret-free error text (provider messages can echo a masked key)."""
-    text = _SECRET_RE.sub("[redacted]", str(exc).replace("\n", " "))
+    """One-line, secret-free error text (provider messages can echo a key, masked or not)."""
+    text = str(exc).replace("\n", " ")
+    for secret in _CONFIGURED_SECRETS:
+        if secret:
+            text = text.replace(secret, "[redacted]")
+    text = _SECRET_RE.sub("[redacted]", text)
     return text[:300]
 
 
@@ -58,6 +66,8 @@ class OpenAIInterpreterClient:
 
     def __init__(self, settings: Settings):
         kwargs: dict = {"api_key": settings.openai_api_key, "max_retries": 0, "timeout": settings.llm_timeout_s}
+        if settings.openai_api_key and settings.openai_api_key not in _CONFIGURED_SECRETS:
+            _CONFIGURED_SECRETS.append(settings.openai_api_key)  # redact the literal key from any error text
         if settings.openai_base_url:
             kwargs["base_url"] = settings.openai_base_url
         self._client = AsyncOpenAI(**kwargs)
@@ -98,7 +108,16 @@ class OpenAIInterpreterClient:
             if s.model and s.model.lower() != "auto":
                 self.primary = s.model
             elif self.available:
-                self.primary = next((m for m in preference if m in self.available), preference[0])
+                usable = [m for m in preference if m in self.available]
+                if not usable:  # none of the preferred ids: pick any general chat model the key can use
+                    usable = sorted(
+                        m for m in self.available
+                        if m.startswith(("gpt-5", "gpt-4.1", "gpt-4o"))
+                        and not any(x in m for x in ("audio", "realtime", "transcribe", "tts", "search", "image",
+                                                     "codex", "-pro", "deep-research", "chat-latest"))
+                    )
+                    preference = usable + preference
+                self.primary = usable[0] if usable else preference[0]
             else:
                 self.primary = preference[0]
 
@@ -266,13 +285,12 @@ class OpenAIInterpreterClient:
         return parsed
 
     async def _json_mode_call(self, kwargs: dict) -> SemanticInterpretation:
-        schema_hint = SemanticInterpretation.model_json_schema()
+        schema_hint = json.dumps(SemanticInterpretation.model_json_schema())
         messages = list(kwargs.pop("messages"))
         messages.append(
             {
                 "role": "system",
-                "content": "Respond with ONE JSON object only, matching this JSON schema exactly: "
-                + str(schema_hint),
+                "content": "Respond with ONE JSON object only, matching this JSON schema exactly: " + schema_hint,
             }
         )
         completion = await self._client.chat.completions.create(
@@ -283,6 +301,8 @@ class OpenAIInterpreterClient:
         choice = completion.choices[0]
         if choice.finish_reason == "length":
             raise LLMCallError("length", "output truncated", retryable=True)
+        if choice.finish_reason == "content_filter" or getattr(choice.message, "refusal", None):
+            raise LLMCallError("refusal", "content filter or refusal", retryable=False)
         content = choice.message.content or ""
         return SemanticInterpretation.model_validate_json(content)
 

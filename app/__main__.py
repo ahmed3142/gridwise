@@ -8,6 +8,16 @@ import uvicorn
 
 
 def main() -> None:
+    try:  # make PORT / HOST / LOG_LEVEL / WEB_CONCURRENCY from .env effective here too
+        from dotenv import load_dotenv
+
+        load_dotenv(override=False)
+    except Exception:  # pragma: no cover
+        pass
+    level = os.environ.get("LOG_LEVEL", "info").strip().lower()
+    level = {"warn": "warning", "fatal": "critical"}.get(level, level)
+    if level not in {"critical", "error", "warning", "info", "debug", "trace"}:
+        level = "info"
     uvicorn.run(
         "app.main:app",
         host=os.environ.get("HOST", "0.0.0.0"),
@@ -17,7 +27,7 @@ def main() -> None:
         forwarded_allow_ips="*",
         timeout_keep_alive=30,
         access_log=False,
-        log_level=os.environ.get("LOG_LEVEL", "info").lower(),
+        log_level=level,
     )
 
 

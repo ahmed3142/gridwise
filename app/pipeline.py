@@ -34,6 +34,7 @@ class ScenarioInfeasible(Exception):
 class PipelineResult:
     body: dict
     degraded: bool = False
+    self_check_failed: bool = False
     timings_ms: dict[str, float] = field(default_factory=dict)
     notes: list[NoteResult] = field(default_factory=list)
 
@@ -55,6 +56,13 @@ async def run_pipeline(req: OptimizeRequest, service: InterpretationService, set
     t1 = time.perf_counter()
     problem = build_problem(req.hours, req.battery, directives)
     solution = await run_in_threadpool(solve, problem)
+    if solution is None:
+        # The safe 2-decimal rounding can, in rare edge cases, over-tighten a feasible day
+        # (e.g. reserve 66.6667 rounded up to 66.67 with initial energy 66.6667): retry exact values.
+        exact = build_problem(req.hours, req.battery, directives, conservative=False)
+        solution = await run_in_threadpool(solve, exact)
+        if solution is not None:
+            problem = exact
 
     if solution is None and service.configured:
         culprits = await run_in_threadpool(infeasibility_culprits, req.hours, req.battery, directives)
@@ -68,9 +76,14 @@ async def run_pipeline(req: OptimizeRequest, service: InterpretationService, set
         remaining = deadline - loop.time()
         if remaining > 3.0:
             retried = await asyncio.gather(
-                *(service.reinterpret(i, notes, req.battery, deadline, feedback) for i in culprits)
+                *(
+                    service.reinterpret(i, notes, req.battery, deadline, feedback, previous=results[i].semantic)
+                    for i in culprits
+                )
             )
             for r in retried:
+                if r.degraded:  # the re-ask itself failed: keep the original reading
+                    continue
                 results[r.directive.note_index] = r
                 directives[r.directive.note_index] = r.directive
             problem = build_problem(req.hours, req.battery, directives)
@@ -83,7 +96,7 @@ async def run_pipeline(req: OptimizeRequest, service: InterpretationService, set
         log.error("serving least-violation plan: %s", solution.violations[:4])
     timings["optimize"] = (time.perf_counter() - t1) * 1000
 
-    plan = build_hourly_plan(problem, solution)
+    plan = build_hourly_plan(solution.plan_problem or problem, solution)
     totals = plan_totals(plan, problem.tariff)
     body = {
         "scenario_id": req.scenario_id,
@@ -101,6 +114,7 @@ async def run_pipeline(req: OptimizeRequest, service: InterpretationService, set
     return PipelineResult(
         body=body,
         degraded=any(r.degraded for r in results) or solution.relaxed,
+        self_check_failed=bool(violations) and not solution.relaxed,
         timings_ms=timings,
         notes=results,
     )

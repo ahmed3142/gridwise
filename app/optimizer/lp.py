@@ -84,6 +84,8 @@ class Solution:
     relaxed: bool = False
     violations: list[str] = field(default_factory=list)
     stages: int = 1
+    # The (relaxed) limits the plan must be built against; None = the strict problem.
+    plan_problem: "Problem | None" = None
 
 
 def _two_dp(x: float) -> float | None:
@@ -107,16 +109,29 @@ def conservative_reserve(r: float, capacity: float) -> float:
     return min(capacity, snapped if snapped is not None else math.ceil(r * 100 - 1e-9) / 100)
 
 
-def build_problem(hours: list[HourEntry], battery: Battery, directives: list[Directive]) -> Problem:
+def build_problem(
+    hours: list[HourEntry], battery: Battery, directives: list[Directive], conservative: bool = True
+) -> Problem:
+    """conservative=True applies the safe 2-decimal rounding of non-round directive values."""
     ordered = sorted(hours, key=lambda e: e.hour)
     demand = np.array([e.demand_kwh for e in ordered], dtype=float)
     solar_base = np.array([e.solar_kwh for e in ordered], dtype=float)
     tariff = np.array([e.tariff_bdt_per_kwh for e in ordered], dtype=float)
 
+    # One hour can never move more than capacity - minimum, so larger rate limits change nothing;
+    # clamping keeps the numbers well-scaled. Rates below 1e-6 kWh/h are treated as zero.
+    span = max(float(battery.capacity_kwh) - float(battery.minimum_energy_kwh), 0.0)
+    max_charge = min(float(battery.max_charge_kwh_per_hour), span)
+    max_discharge = min(float(battery.max_discharge_kwh_per_hour), span)
+    max_charge = 0.0 if max_charge < 1e-6 else max_charge
+    max_discharge = 0.0 if max_discharge < 1e-6 else max_discharge
+    factor_of = conservative_factor if conservative else float
+    cap_of = conservative_cap if conservative else float
+
     factor = np.ones(H)
     e_min = np.full(H, float(battery.minimum_energy_kwh))
-    c_max = np.full(H, float(battery.max_charge_kwh_per_hour))
-    d_max = np.full(H, float(battery.max_discharge_kwh_per_hour))
+    c_max = np.full(H, max_charge)
+    d_max = np.full(H, max_discharge)
     g_max = np.full(H, np.inf)
     sources: dict[int, str] = {}
 
@@ -126,15 +141,18 @@ def build_problem(hours: list[HourEntry], battery: Battery, directives: list[Dir
         sources[d.note_index] = d.directive_type
         for h in d.hours:
             if d.directive_type == "solar_reduction":
-                factor[h] *= conservative_factor(float(d.factor))
+                factor[h] *= factor_of(float(d.factor))
             elif d.directive_type == "minimum_battery_reserve":
-                e_min[h] = max(e_min[h], conservative_reserve(float(d.minimum_energy_kwh), float(battery.capacity_kwh)))
+                reserve = float(d.minimum_energy_kwh)
+                if conservative:
+                    reserve = conservative_reserve(reserve, float(battery.capacity_kwh))
+                e_min[h] = max(e_min[h], reserve)
             elif d.directive_type == "no_charge_window":
                 c_max[h] = 0.0
             elif d.directive_type == "no_discharge_window":
                 d_max[h] = 0.0
             elif d.directive_type == "max_grid_window":
-                g_max[h] = min(g_max[h], conservative_cap(float(d.max_grid_kwh)))
+                g_max[h] = min(g_max[h], cap_of(float(d.max_grid_kwh)))
 
     return Problem(
         demand=demand,
@@ -144,8 +162,8 @@ def build_problem(hours: list[HourEntry], battery: Battery, directives: list[Dir
         capacity=float(battery.capacity_kwh),
         initial=float(battery.initial_energy_kwh),
         base_min=float(battery.minimum_energy_kwh),
-        max_charge=float(battery.max_charge_kwh_per_hour),
-        max_discharge=float(battery.max_discharge_kwh_per_hour),
+        max_charge=max_charge,
+        max_discharge=max_discharge,
         e_min=e_min,
         c_max=c_max,
         d_max=d_max,
@@ -360,7 +378,7 @@ def solve_relaxed(p: Problem) -> Solution | None:
         from scipy.sparse import vstack
 
         A_ub_b = vstack([A_ub, extra_row])
-        b_ub_b = np.concatenate([b_ub_arr, [slack_star + 1e-6 * max(1.0, slack_star)]])
+        b_ub_b = np.concatenate([b_ub_arr, [slack_star + 1e-7]])  # tiny absolute slack (no cost-driven drift)
     else:  # pragma: no cover - no soft constraints means the strict model was feasible
         A_ub_b, b_ub_b = extra_row, np.array([slack_star])
     res_b = linprog(obj_b, A_ub=A_ub_b, b_ub=b_ub_b, A_eq=A_eq, b_eq=b_eq, bounds=bounds, method="highs")
@@ -368,6 +386,7 @@ def solve_relaxed(p: Problem) -> Solution | None:
 
     sol = _unpack(x[:NVAR], p, 2)
     sol.relaxed = True
+    sol.plan_problem = relaxed  # build the plan against the relaxed limits the LP actually used
     slacks = x[NVAR:]
     k = 0
     for group, label in ((reserve_h, "reserve"), (no_charge_h, "no-charge"), (no_discharge_h, "no-discharge"), (cap_h, "grid cap")):

@@ -6,7 +6,7 @@ No secret is ever logged or returned. See README "Environment variables" for the
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 try:  # python-dotenv is optional at runtime; real environment variables always win.
     from dotenv import load_dotenv
@@ -71,7 +71,7 @@ def _env_list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class Settings:
-    openai_api_key: str | None
+    openai_api_key: str | None = field(repr=False)
     openai_base_url: str | None
     model: str
     fallback_model: str | None

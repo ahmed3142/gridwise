@@ -145,18 +145,30 @@ class InterpretationService:
                     log.info("warm-up call to %s succeeded", model)
                 except LLMCallError as exc:
                     self._record(False, exc.kind)
+                    if exc.kind == "not_found":
+                        self.client.mark_dead(model)
                     log.warning("warm-up call to %s failed: %s", model, exc.kind)
         except Exception as exc:  # pragma: no cover - warm-up must never affect the service
             log.warning("warm-up skipped (%s)", type(exc).__name__)
 
     async def reinterpret(
-        self, index: int, notes: list[str], battery: Battery, deadline: float, feedback: list[str]
+        self,
+        index: int,
+        notes: list[str],
+        battery: Battery,
+        deadline: float,
+        feedback: list[str],
+        previous: SemanticInterpretation | None = None,
     ) -> NoteResult:
-        """Fresh interpretation with extra feedback (used when directives make the day infeasible)."""
+        """Fresh interpretation with extra feedback (used when directives make the day infeasible).
+
+        The model sees its previous answer, so the feedback refers to something concrete. The result
+        is scenario-specific, so it is NOT cached under the shared (notes-only) key.
+        """
         if not self.configured:
             return NoteResult(directive=no_op(index, "LLM not configured.", "fallback"), degraded=True)
-        sem, meta = await self._ask(index, notes, battery, deadline, extra_feedback=feedback)
-        return self._finish(index, notes, battery, sem, meta, cached=False, cache_key=_cache_key(notes, index))
+        sem, meta = await self._ask(index, notes, battery, deadline, extra_feedback=feedback, previous=previous)
+        return self._finish(index, notes, battery, sem, meta, cached=False, cache_key=None)
 
     # ------------------------------------------------------------------ internals
 
@@ -177,14 +189,17 @@ class InterpretationService:
             sem, model = hit
             return self._finish(index, notes, battery, sem, {"model": model, "attempts": 0}, cached=True, cache_key=None)
 
-        if key in self._inflight:
-            try:
-                sem, meta = await asyncio.shield(self._inflight[key])
-                return self._finish(index, notes, battery, sem, dict(meta, attempts=0), cached=True, cache_key=None)
-            except Exception:
-                pass  # the leader failed; try on our own below
-
         loop = asyncio.get_running_loop()
+        leader = self._inflight.get(key)
+        if leader is not None:
+            await asyncio.wait([leader])  # never raises for the leader's outcome
+            if not leader.cancelled() and leader.exception() is None:
+                sem, meta = leader.result()
+                enough_time = deadline - loop.time() >= SOLVE_RESERVE_S + MIN_ATTEMPT_S
+                if sem is not None or not enough_time:
+                    return self._finish(index, notes, battery, sem, dict(meta, attempts=0), cached=True, cache_key=None)
+            # leader cancelled, crashed or failed while we still have budget: try on our own
+
         future: asyncio.Future = loop.create_future()
         self._inflight[key] = future
         try:
@@ -193,11 +208,15 @@ class InterpretationService:
                 future.set_result((sem, meta))
         except BaseException as exc:  # pragma: no cover - _ask never raises by design
             if not future.done():
-                future.set_exception(exc)
-                future.exception()  # mark retrieved
+                if isinstance(exc, asyncio.CancelledError):
+                    future.cancel()  # never hand our own cancellation to other requests
+                else:
+                    future.set_exception(exc)
+                    future.exception()  # mark retrieved
             raise
         finally:
-            self._inflight.pop(key, None)
+            if self._inflight.get(key) is future:
+                self._inflight.pop(key, None)
         return self._finish(index, notes, battery, sem, meta, cached=False, cache_key=key)
 
     def _finish(self, index, notes, battery, sem, meta, cached: bool, cache_key: str | None) -> NoteResult:
@@ -235,6 +254,7 @@ class InterpretationService:
         battery: Battery,
         deadline: float,
         extra_feedback: list[str] | None = None,
+        previous: SemanticInterpretation | None = None,
     ) -> tuple[SemanticInterpretation | None, dict]:
         loop = asyncio.get_running_loop()
         note = notes[index]
@@ -242,6 +262,8 @@ class InterpretationService:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_message(notes, index)},
         ]
+        if previous is not None:
+            base.append({"role": "assistant", "content": previous.model_dump_json()})
         if extra_feedback:
             base.append({"role": "user", "content": feedback_message(extra_feedback)})
 
@@ -252,6 +274,9 @@ class InterpretationService:
             chain = await asyncio.wait_for(self.client.model_chain(), timeout=max(0.5, deadline - loop.time() - 5))
         except Exception:
             chain = list(self.settings.model_preference[:2])
+        if not chain:
+            meta["error"] = "no_model"
+            return None, meta
 
         for model in chain:
             messages = list(base)
@@ -264,11 +289,23 @@ class InterpretationService:
                 tries += 1
                 meta["attempts"] += 1
                 meta["model"] = model
-                timeout = min(self.settings.llm_timeout_s, remaining)
                 started = time.perf_counter()
                 try:
-                    async with self._sem():
-                        sem = await self.client.interpret(model, messages, timeout)
+                    # Hard wall-clock cap on queueing for a slot AND the call itself (the HTTP client's
+                    # timeout is per read, so a trickling response could otherwise run far longer).
+                    async with asyncio.timeout(remaining):
+                        async with self._sem():
+                            remaining = deadline - loop.time() - SOLVE_RESERVE_S  # re-read after queueing
+                            if remaining < MIN_ATTEMPT_S:
+                                raise TimeoutError
+                            sem = await self.client.interpret(
+                                model, messages, min(self.settings.llm_timeout_s, remaining)
+                            )
+                except TimeoutError:
+                    meta["error"] = "timeout"
+                    self._record(False, "timeout")
+                    log.warning("note %d: %s attempt %d hit the time budget; trying the next model", index, model, tries)
+                    break  # a slow model is unlikely to be fast on a retry: go to the fallback
                 except LLMCallError as exc:
                     meta["error"] = exc.kind
                     self._record(False, exc.kind)
@@ -279,8 +316,8 @@ class InterpretationService:
                     if exc.kind == "not_found":
                         self.client.mark_dead(model)
                         break
-                    if exc.kind in ("auth", "bad_request", "refusal", "quota"):
-                        break
+                    if exc.kind == "timeout" or not exc.retryable:
+                        break  # next model
                     if exc.kind == "rate_limit" and exc.retry_after:
                         pause = min(exc.retry_after, 2.0, max(0.0, remaining - MIN_ATTEMPT_S))
                         if pause > 0:

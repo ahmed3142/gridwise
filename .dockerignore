@@ -1,15 +1,21 @@
 # Never ship secrets or local state into the image
 .env
 .env.*
+**/.env
+**/.env.*
 !.env.example
 *.pem
 *.key
+**/*.pem
+**/*.key
 .git
 .gitignore
 .venv
 venv
 __pycache__
 *.pyc
+**/__pycache__
+**/*.pyc
 .pytest_cache
 .mypy_cache
 .ruff_cache

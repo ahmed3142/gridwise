@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -76,6 +77,38 @@ def _error(status: int, error: str, message: str, request: Request, details: lis
     )
 
 
+# Request schema for the docs, with $refs that resolve inside the OpenAPI document.
+_REQUEST_SCHEMA = OptimizeRequest.model_json_schema(ref_template="#/components/schemas/{model}")
+_REQUEST_DEFS = _REQUEST_SCHEMA.pop("$defs", {})
+
+
+def _openapi() -> dict:
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(title=app.title, version=app.version, description=app.description, routes=app.routes)
+    schema.setdefault("components", {}).setdefault("schemas", {}).update(_REQUEST_DEFS)
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = _openapi  # type: ignore[method-assign]
+
+
+async def _read_body_capped(request: Request, limit: int) -> bytes | None:
+    """Read at most `limit` bytes; None when the body is larger (never buffers an oversized body)."""
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > limit:
+        return None
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _format_validation_errors(errors: list[dict]) -> list[str]:
     out = []
     for err in errors[:20]:
@@ -121,7 +154,8 @@ async def _unhandled_handler(request: Request, exc: Exception):
 # ---------------------------------------------------------------------------------------------- routes
 
 
-@app.api_route("/health", methods=["GET", "HEAD"], tags=["service"])
+@app.get("/health", tags=["service"])
+@app.api_route("/health", methods=["HEAD"], include_in_schema=False)
 @app.api_route("/health/", methods=["GET", "HEAD"], include_in_schema=False)
 async def health():
     return {"status": "ok"}
@@ -160,17 +194,17 @@ async def version(request: Request):
     openapi_extra={
         "requestBody": {
             "required": True,
-            "content": {"application/json": {"schema": OptimizeRequest.model_json_schema()}},
+            "content": {"application/json": {"schema": _REQUEST_SCHEMA}},
         }
     },
 )
 async def optimize_energy(request: Request):
-    body = await request.body()
-    if len(body) > settings.max_body_bytes:
+    body = await _read_body_capped(request, settings.max_body_bytes)
+    if body is None:
         return _error(400, "invalid_request", f"Request body exceeds {settings.max_body_bytes} bytes.", request)
     try:
         data = json.loads(body)
-    except (ValueError, UnicodeDecodeError) as exc:
+    except (ValueError, UnicodeDecodeError, RecursionError) as exc:
         return _error(400, "invalid_json", "Request body is not valid JSON.", request, [str(exc)[:200]])
     if not isinstance(data, dict):
         return _error(400, "invalid_request", "Request body must be a JSON object.", request)
@@ -184,7 +218,15 @@ async def optimize_energy(request: Request):
         return _error(422, "semantically_invalid", "Request is well-formed but physically inconsistent.", request, problems)
 
     try:
-        result = await run_pipeline(req, request.app.state.service, settings)
+        try:
+            # Safety net below the judge's 30 s limit: the pipeline has its own 24 s budget, but if
+            # anything still overruns, answer with a controlled, LLM-free plan instead of timing out.
+            async with asyncio.timeout(settings.request_deadline_s + 3.0):
+                result = await run_pipeline(req, request.app.state.service, settings)
+        except TimeoutError:
+            log.error("request exceeded the time budget; serving the LLM-free degraded plan")
+            result = await run_pipeline(req, InterpretationService(None, settings), settings)
+            result.degraded = True
     except ScenarioInfeasible as exc:
         return _error(422, "infeasible_scenario", str(exc), request)
 
@@ -194,4 +236,6 @@ async def optimize_energy(request: Request):
         response.headers["Server-Timing"] = timing
     if result.degraded:
         response.headers["X-GridWise-Degraded"] = "true"
+    if result.self_check_failed:
+        response.headers["X-GridWise-Self-Check"] = "failed"
     return response
